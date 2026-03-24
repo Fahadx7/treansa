@@ -4,17 +4,28 @@ import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
 import { SAUDI_STOCKS } from '../../src/symbols';
 
-// ========= Yahoo Finance direct fetch (replaces yahoo-finance2 package) =========
+// ========= Yahoo Finance direct fetch =========
 const YF_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'application/json',
     'Accept-Language': 'en-US,en;q=0.9',
 };
 
+// fetch مع timeout (AbortController)
+async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { headers: YF_HEADERS, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function yfChart(symbol: string, interval: string, period1: number): Promise<{ meta: any; quotes: any[] }> {
     const period2 = Math.floor(Date.now() / 1000);
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&period1=${period1}&period2=${period2}`;
-    const res = await fetch(url, { headers: YF_HEADERS });
+    const res = await fetchWithTimeout(url, 8000);
     if (!res.ok) throw new Error(`YF chart error ${res.status} for ${symbol}`);
     const data: any = await res.json();
     const result = data?.chart?.result?.[0];
@@ -34,10 +45,10 @@ async function yfChart(symbol: string, interval: string, period1: number): Promi
     return { meta: result.meta, quotes };
 }
 
-async function yfQuote(symbols: string | string[]): Promise<any> {
+async function yfQuote(symbols: string | string[], timeoutMs = 6000): Promise<any> {
     const list = Array.isArray(symbols) ? symbols.join(',') : symbols;
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`;
-    const res = await fetch(url, { headers: YF_HEADERS });
+    const res = await fetchWithTimeout(url, timeoutMs);
     if (!res.ok) throw new Error(`YF quote error ${res.status}`);
     const data: any = await res.json();
     const results: any[] = data?.quoteResponse?.result || [];
@@ -366,31 +377,46 @@ app.use((_, res, next) => {
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50kb' }));
 
-// جلب سريع للأسعار الأساسية (بدون تحليل عميق) - يعمل ضمن timeout الـ serverless
+// جلب سريع للأسعار — يجب أن يكتمل في < 8 ثواني
 async function quickFetch() {
     const symbols = Object.keys(SAUDI_STOCKS).map(s => `${s}.SR`);
-    // جلب TASI
+
+    // TASI index (3 ثواني max)
     try {
-        const tasi = await yfQuote('^TASI');
+        const tasi = await yfQuote('^TASI', 3000);
         if (tasi) scanStatus.marketIndex = { price: tasi.regularMarketPrice, change: tasi.regularMarketChange, changePercent: tasi.regularMarketChangePercent, high: tasi.regularMarketDayHigh, low: tasi.regularMarketDayLow, volume: tasi.regularMarketVolume, time: new Date().toISOString() };
     } catch (e) {}
-    // جلب bulk quotes بالتوازي (حزم 50)
+
+    // حزم 50 سهم بالتوازي — كل request له 5 ثواني max
     const chunks: string[][] = [];
     for (let i = 0; i < symbols.length; i += 50) chunks.push(symbols.slice(i, i + 50));
-    await Promise.all(chunks.map(async (chunk) => {
-        try {
-            const quotes = await yfQuote(chunk);
-            if (!Array.isArray(quotes)) return;
-            for (const q of quotes) {
-                if (!q?.symbol) continue;
-                const change = q.regularMarketChangePercent || 0;
-                const sd = { symbol: q.symbol, companyName: SAUDI_STOCKS[q.symbol.split('.')[0]] || q.symbol, price: q.regularMarketPrice || 0, change, volume: q.regularMarketVolume || 0, volumeRatio: 1, rsi: 50, wave: "—", macd: { macd: 0, signal: 0, histogram: 0 }, bb: { middle: 0, upper: 0, lower: 0 } };
-                scanStatus.tickerData.set(q.symbol, sd);
-                if (change > 0) scanStatus.topGainers.push(sd);
-                else if (change < 0) scanStatus.topLosers.push(sd);
-            }
-        } catch (e) {}
-    }));
+
+    const results = await Promise.allSettled(
+        chunks.map(chunk => yfQuote(chunk, 5000))
+    );
+
+    scanStatus.topGainers = [];
+    scanStatus.topLosers = [];
+
+    for (const r of results) {
+        if (r.status !== 'fulfilled' || !Array.isArray(r.value)) continue;
+        for (const q of r.value) {
+            if (!q?.symbol) continue;
+            const change = q.regularMarketChangePercent || 0;
+            const sd = {
+                symbol: q.symbol,
+                companyName: SAUDI_STOCKS[q.symbol.split('.')[0]] || q.symbol,
+                price: q.regularMarketPrice || 0, change,
+                volume: q.regularMarketVolume || 0, volumeRatio: 1,
+                rsi: 50, wave: "—",
+                macd: { macd: 0, signal: 0, histogram: 0 },
+                bb: { middle: 0, upper: 0, lower: 0 }
+            };
+            scanStatus.tickerData.set(q.symbol, sd);
+            if (change > 0) scanStatus.topGainers.push(sd);
+            else if (change < 0) scanStatus.topLosers.push(sd);
+        }
+    }
     scanStatus.topGainers.sort((a, b) => b.change - a.change).splice(10);
     scanStatus.topLosers.sort((a, b) => a.change - b.change).splice(10);
     scanStatus.lastScan = new Date().toISOString();
@@ -473,6 +499,17 @@ app.get("/api/history/:symbol", async (req, res) => {
 });
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+// اختبار هل Yahoo Finance يعمل من Netlify
+app.get("/api/test-yahoo", async (req, res) => {
+    const start = Date.now();
+    try {
+        const q = await yfQuote('2222.SR', 5000);
+        res.json({ success: true, symbol: q?.symbol, price: q?.regularMarketPrice, ms: Date.now() - start });
+    } catch (e: any) {
+        res.json({ success: false, error: e.message, ms: Date.now() - start });
+    }
+});
 
 app.post("/api/ai-analysis", async (req, res) => {
     const ip = req.ip || 'unknown';
