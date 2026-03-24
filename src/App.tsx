@@ -2102,7 +2102,7 @@ function App() {
               </button>
 
               <a
-                href={status?.telegramBotName ? `https://t.me/${status.telegramBotName}` : "https://t.me/Aboamran2016"}
+                href="https://t.me/RadarsaudiiBot"
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#0088cc] hover:bg-[#0077b5] text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-blue-900/30 whitespace-nowrap"
@@ -2479,7 +2479,7 @@ function App() {
                    احصل على تنبيهات فورية، تحليلات يومية، ومتابعة حية مباشرة على جوالك. لا تفوت أي فرصة في السوق السعودي!
                  </p>
                  <a
-                   href={status?.telegramBotName ? `https://t.me/${status.telegramBotName}` : "https://t.me/Aboamran2016"}
+                   href="https://t.me/RadarsaudiiBot"
                    target="_blank"
                    rel="noreferrer"
                    className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#0088cc] hover:bg-[#0077b5] text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-900/30 hover:shadow-blue-900/50"
