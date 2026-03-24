@@ -542,6 +542,19 @@ app.get("/api/history/:symbol", async (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
+// إرسال إشعار تليجرام من الفرونت‌إند
+app.post("/api/notify", async (req, res) => {
+    const { message } = req.body;
+    if (!message || typeof message !== 'string' || message.length > 2000) {
+        return res.status(400).json({ success: false, error: "رسالة غير صالحة" });
+    }
+    try {
+        const result = await sendTelegramMsg(message);
+        if (result && !result.success) throw new Error((result as any).error);
+        res.json({ success: true });
+    } catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
+});
+
 // اختبار هل Yahoo Finance يعمل من Netlify
 app.get("/api/test-yahoo", async (req, res) => {
     const start = Date.now();

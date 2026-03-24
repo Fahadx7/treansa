@@ -1,29 +1,105 @@
 import { SAUDI_STOCKS } from './symbols';
 
-// CORS proxies tried in order
-const PROXIES = [
-  (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+// ---- localStorage cache ----
+const CACHE_KEY = 'market_data_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export interface CachedMarketData {
+  stocks: any[];
+  marketIndex: any;
+  savedAt: number;
+}
+
+export function loadCache(): CachedMarketData | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed: CachedMarketData = JSON.parse(raw);
+    if (Date.now() - parsed.savedAt > CACHE_TTL) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCache(stocks: any[], marketIndex: any): void {
+  try {
+    const data: CachedMarketData = { stocks, marketIndex, savedAt: Date.now() };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch { /* storage full — ignore */ }
+}
+
+// ---- CORS proxies tried in order
+// makeUrl  → builds the proxy request URL
+// extract  → pulls the raw Yahoo Finance JSON text out of the proxy's response
+//   (allorigins /get wraps in {"contents":"..."}, the others return raw text)
+const PROXIES: Array<{
+  name: string;
+  makeUrl: (u: string) => string;
+  extract: (raw: string) => string;
+}> = [
+  {
+    name:    'corsproxy.io',
+    makeUrl: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    extract: (t) => t,
+  },
+  {
+    name:    'allorigins',
+    makeUrl: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+    extract: (t) => {
+      const j = JSON.parse(t);
+      if (!j?.contents) throw new Error('allorigins: empty contents');
+      return j.contents as string;
+    },
+  },
+  {
+    name:    'codetabs',
+    makeUrl: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    extract: (t) => t,
+  },
+  {
+    name:    'corsproxy.org',
+    makeUrl: (u) => `https://corsproxy.org/?${encodeURIComponent(u)}`,
+    extract: (t) => t,
+  },
+  {
+    name:    'cors.lol',
+    makeUrl: (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`,
+    extract: (t) => t,
+  },
 ];
 
-async function proxyFetch(url: string, timeoutMs = 12000): Promise<any> {
-  let lastErr: unknown;
-  for (const makeUrl of PROXIES) {
+async function proxyFetch(url: string, timeoutMs = 10000): Promise<any> {
+  const errs: string[] = [];
+  for (const proxy of PROXIES) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(makeUrl(url), { signal: controller.signal });
+      const res = await fetch(proxy.makeUrl(url), { signal: controller.signal });
       clearTimeout(timer);
-      if (res.ok) {
-        const text = await res.text();
-        return JSON.parse(text);
+      const raw = await res.text();
+      if (!res.ok) {
+        errs.push(`${proxy.name}: HTTP ${res.status}`);
+        continue;
       }
-    } catch (e) {
+      const extracted = proxy.extract(raw);
+      const parsed = JSON.parse(extracted);
+      // Yahoo Finance sometimes returns 200 with an error payload
+      const yfErr = parsed?.finance?.error ?? parsed?.quoteResponse?.error ?? parsed?.chart?.error;
+      if (yfErr) {
+        errs.push(`${proxy.name}: YF error ${yfErr.code ?? yfErr}`);
+        continue;
+      }
+      return parsed;
+    } catch (e: any) {
       clearTimeout(timer);
-      lastErr = e;
+      const reason = e?.name === 'AbortError' ? 'timeout' : (e?.message ?? 'error');
+      errs.push(`${proxy.name}: ${reason}`);
     }
   }
-  throw lastErr ?? new Error('All proxies failed for: ' + url);
+  const summary = errs.join(' | ');
+  console.error('[marketData] all proxies failed:', summary, '\nURL:', url);
+  throw new Error(`فشل الاتصال بـ Yahoo Finance (${summary})`);
 }
 
 export function getAllSymbols(): string[] {

@@ -91,6 +91,8 @@ import {
   buildHistoryFromChart,
   computeIndicators,
   getAllSymbols,
+  loadCache,
+  saveCache,
 } from './marketData';
 
 const List = (ReactWindow as any).FixedSizeList;
@@ -1644,24 +1646,75 @@ function App() {
     }
   };
 
+  const buildAndSetStatus = (allStocks: StockStats[], marketIndex: any) => {
+    const topGainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 10);
+    const topLosers     = [...allStocks].sort((a, b) => a.change - b.change).slice(0, 10);
+    const liquidityEntry = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
+    const liquidityExit  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change < 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
+    setStatus({
+      lastScan: new Date().toISOString(),
+      isScanning: false,
+      processedCount: allStocks.length,
+      totalCount: getAllSymbols().length,
+      activeTradesCount: 0,
+      activeTrades: [],
+      alerts: [],
+      topGainers,
+      topLosers,
+      liquidityEntry,
+      liquidityExit,
+      waveStocks: [],
+      tickerData: allStocks,
+      customAlerts: [],
+      marketIndex,
+      telegramConnected: false,
+      telegramBotName: null,
+      botStatusError: null,
+    });
+  };
+
   const runMarketScan = async () => {
+    // Show cached data instantly, then refresh in background
+    const cached = loadCache();
+    if (cached) {
+      buildAndSetStatus(cached.stocks, cached.marketIndex);
+      setFetchError(null);
+    }
+
     setIsLoadingData(true);
     try {
       const symbols = getAllSymbols();
-      const allStocks: StockStats[] = [];
       const CHUNK = 20;
-      for (let i = 0; i < symbols.length; i += CHUNK) {
-        try {
-          const qs = await fetchQuotesBatch(symbols.slice(i, i + CHUNK));
-          for (const q of qs) if (q.regularMarketPrice) allStocks.push(buildStockFromQuote(q));
-        } catch { /* skip failed chunk */ }
+
+      // Build all batches and fire them in parallel
+      const chunks: string[][] = [];
+      for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
+
+      const results = await Promise.allSettled([
+        ...chunks.map(c => fetchQuotesBatch(c)),
+        fetchQuotesBatch(['^TASI']),
+      ]);
+
+      const tasiRaw = results[results.length - 1];
+      const stockResults = results.slice(0, -1);
+
+      const allStocks: StockStats[] = [];
+      for (const r of stockResults) {
+        if (r.status === 'fulfilled') {
+          for (const q of r.value) if (q.regularMarketPrice) allStocks.push(buildStockFromQuote(q));
+        }
       }
-      if (allStocks.length === 0) throw new Error('فشل في جلب بيانات الأسهم من Yahoo Finance — تحقق من اتصالك بالإنترنت');
+      if (allStocks.length === 0) {
+        // Surface the first rejection reason so the user sees what actually failed
+        const firstFail = stockResults.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
+        const reason = firstFail?.reason?.message ?? 'جميع الـ proxies فشلت';
+        throw new Error(reason);
+      }
 
       let marketIndex = null;
-      try {
-        const [t] = await fetchQuotesBatch(['^TASI']);
-        if (t) marketIndex = {
+      if (tasiRaw.status === 'fulfilled' && tasiRaw.value[0]) {
+        const t = tasiRaw.value[0];
+        marketIndex = {
           price: t.regularMarketPrice,
           change: t.regularMarketChange,
           changePercent: t.regularMarketChangePercent,
@@ -1670,34 +1723,16 @@ function App() {
           volume: t.regularMarketVolume,
           time: new Date().toISOString(),
         };
-      } catch { /* TASI optional */ }
+      }
 
-      const topGainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 10);
-      const topLosers     = [...allStocks].sort((a, b) => a.change - b.change).slice(0, 10);
-      const liquidityEntry = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
-      const liquidityExit  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change < 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
-
-      setStatus({
-        lastScan: new Date().toISOString(),
-        isScanning: false,
-        processedCount: allStocks.length,
-        totalCount: symbols.length,
-        activeTradesCount: 0,
-        activeTrades: [],
-        alerts: [],
-        topGainers,
-        topLosers,
-        liquidityEntry,
-        liquidityExit,
-        waveStocks: [],
-        tickerData: allStocks,
-        customAlerts: [],
-        marketIndex,
-        telegramConnected: false,
-        telegramBotName: null,
-        botStatusError: null,
-      });
+      saveCache(allStocks, marketIndex);
+      buildAndSetStatus(allStocks, marketIndex);
       setFetchError(null);
+
+      // Send Telegram signals (fire-and-forget)
+      const gainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 5);
+      const liquidity  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 5);
+      sendTelegramSignals(gainers, liquidity);
     } catch (e: any) {
       console.error('Market scan failed', e);
       setFetchError(e.message || 'خطأ في جلب البيانات');
@@ -1706,9 +1741,47 @@ function App() {
     }
   };
 
-  const testTelegram = () => {
-    setTelegramStatus({ type: 'error', message: '⚠️ ميزة التليجرام تتطلب الاتصال بالخادم.' });
-    setTimeout(() => setTelegramStatus({ type: null, message: '' }), 5000);
+  const testTelegram = async () => {
+    setIsTestingTelegram(true);
+    setTelegramStatus({ type: null, message: '' });
+    try {
+      const res = await fetch('/api/test-telegram', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramStatus({ type: 'success', message: `✅ تم الإرسال بنجاح عبر @${data.botName || 'RadarsaudiiBot'}` });
+      } else {
+        setTelegramStatus({ type: 'error', message: `❌ ${data.error || 'فشل الإرسال'}` });
+      }
+    } catch (e: any) {
+      setTelegramStatus({ type: 'error', message: `❌ ${e.message}` });
+    } finally {
+      setIsTestingTelegram(false);
+      setTimeout(() => setTelegramStatus({ type: null, message: '' }), 6000);
+    }
+  };
+
+  const sendTelegramSignals = async (topGainers: StockStats[], liquidityEntry: StockStats[]) => {
+    const signals = [
+      ...liquidityEntry.slice(0, 3),
+      ...topGainers.slice(0, 3).filter(s => !liquidityEntry.find(l => l.symbol === s.symbol)),
+    ].slice(0, 5);
+    if (!signals.length) return;
+    const lines = signals.map(s =>
+      `📈 *${s.companyName}* (${s.symbol.replace('.SR', '')})\n` +
+      `   السعر: ${s.price.toFixed(2)} ﷼  |  التغير: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%\n` +
+      `   حجم/متوسط: ${s.volumeRatio.toFixed(1)}x`
+    );
+    const msg =
+      `🔔 *رادار السوق السعودي*\n` +
+      `⏰ ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}\n\n` +
+      lines.join('\n\n');
+    try {
+      await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg }),
+      });
+    } catch { /* non-critical — don't surface to user */ }
   };
 
   const startScan = () => {
@@ -1880,6 +1953,24 @@ function App() {
 
   return (
     <div className="min-h-screen bg-app-bg text-app-text font-sans selection:bg-emerald-500/30 transition-colors duration-300" dir="rtl">
+      {/* Telegram status toast */}
+      <AnimatePresence>
+        {telegramStatus.type && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-[300] px-5 py-3 rounded-2xl text-sm font-bold shadow-xl border ${
+              telegramStatus.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}
+          >
+            {telegramStatus.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top loading bar */}
       {isLoadingData && (
         <div className="fixed top-0 left-0 right-0 z-[200] h-0.5 bg-emerald-500/20 overflow-hidden">
@@ -2062,7 +2153,17 @@ function App() {
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
                   </button>
-                
+                <button
+                    onClick={testTelegram}
+                    disabled={isTestingTelegram}
+                    className="p-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg transition-colors shadow-lg shadow-sky-900/20"
+                    title="اختبار التليجرام"
+                  >
+                    {isTestingTelegram
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Send className="w-3.5 h-3.5" />
+                    }
+                  </button>
               </div>
             </div>
           </div>
