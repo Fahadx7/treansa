@@ -348,7 +348,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50kb' }));
 
 // Routes (no /api prefix — basePath is stripped by serverless-http)
-app.get("/status", (req, res) => {
+app.get("/api/status", (req, res) => {
     const tickerArray = Array.from(scanStatus.tickerData.values());
     res.json({
         ...scanStatus, tickerData: tickerArray,
@@ -361,7 +361,7 @@ app.get("/status", (req, res) => {
     });
 });
 
-app.post("/feedback", async (req, res) => {
+app.post("/api/feedback", async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':feedback', 5, 60_000)) return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح." });
     const { name, email, message, type } = req.body;
@@ -374,7 +374,7 @@ app.post("/feedback", async (req, res) => {
     res.json({ success: true, message: "تم استلام ملاحظتك بنجاح، شكراً لك!" });
 });
 
-app.post("/alerts", (req, res) => {
+app.post("/api/alerts", (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':alerts', 10, 60_000)) return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح." });
     const { symbol, targetPrice, targetRsi } = req.body;
@@ -389,7 +389,7 @@ app.post("/alerts", (req, res) => {
     res.json({ success: true, alert: newAlert });
 });
 
-app.post("/test-telegram", async (req, res) => {
+app.post("/api/test-telegram", async (req, res) => {
     try {
         await checkBot();
         if (!botStatus.isValid) throw new Error(botStatus.lastError || "فشل التحقق من البوت");
@@ -401,7 +401,7 @@ app.post("/test-telegram", async (req, res) => {
     }
 });
 
-app.post("/scan", async (req, res) => {
+app.post("/api/scan", async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':scan', 2, 120_000)) return res.status(429).json({ success: false, message: "يمكنك طلب المسح مرتين كل دقيقتين فقط." });
     if (scanStatus.isScanning) return res.status(400).json({ success: false, message: "جاري المسح بالفعل" });
@@ -409,7 +409,7 @@ app.post("/scan", async (req, res) => {
     res.json({ success: true, message: "بدأ المسح اليدوي" });
 });
 
-app.get("/history/:symbol", async (req, res) => {
+app.get("/api/history/:symbol", async (req, res) => {
     const { symbol } = req.params;
     if (!isValidSaudiSymbol(symbol)) return res.status(400).json({ success: false, error: "رمز السهم غير صالح" });
     try {
@@ -429,9 +429,9 @@ app.get("/history/:symbol", async (req, res) => {
     }
 });
 
-app.get("/health", (req, res) => res.json({ status: "ok" }));
+app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
-app.post("/ai-analysis", async (req, res) => {
+app.post("/api/ai-analysis", async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':ai', 10, 60_000)) return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح." });
     const { symbol, companyName, price, change, rsi, wave, macd, bb, atr, stochRsi: stoch } = req.body;
@@ -452,7 +452,7 @@ BB: Upper=${bb?.upper ?? 'N/A'} Lower=${bb?.lower ?? 'N/A'} | ATR(14): ${atr ?? 
     }
 });
 
-app.post("/ai-news", async (req, res) => {
+app.post("/api/ai-news", async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':ai-news', 5, 60_000)) return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح." });
     const { symbol, companyName } = req.body;
@@ -473,7 +473,7 @@ app.post("/ai-news", async (req, res) => {
     }
 });
 
-app.post("/ai-logo", async (req, res) => {
+app.post("/api/ai-logo", async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':logo', 3, 300_000)) return res.status(429).json({ success: false, error: "يمكنك توليد 3 شعارات كل 5 دقائق فقط." });
     if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط." });
@@ -491,4 +491,4 @@ app.post("/ai-logo", async (req, res) => {
 });
 
 // Export handler — basePath strips '/.netlify/functions/api' so routes above receive just /status, /scan etc.
-export const handler = serverless(app, { basePath: '/.netlify/functions/api' });
+export const handler = serverless(app);

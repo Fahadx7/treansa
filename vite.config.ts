@@ -15,12 +15,8 @@ export default defineConfig(() => {
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
-        // In local dev, forward /.netlify/functions/api/* to Express on port 3000
-        '/.netlify/functions/api': {
-          target: 'http://localhost:3000',
-          changeOrigin: true,
-          rewrite: (path) => path.replace('/.netlify/functions/api', '/api'),
-        },
+        // Local dev: /api/* → Express on port 3000
+        '/api': 'http://localhost:3000',
       },
     },
   };
