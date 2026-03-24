@@ -366,7 +366,41 @@ app.use((_, res, next) => {
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50kb' }));
 
-app.get("/api/status", (req, res) => {
+// جلب سريع للأسعار الأساسية (بدون تحليل عميق) - يعمل ضمن timeout الـ serverless
+async function quickFetch() {
+    const symbols = Object.keys(SAUDI_STOCKS).map(s => `${s}.SR`);
+    // جلب TASI
+    try {
+        const tasi = await yfQuote('^TASI');
+        if (tasi) scanStatus.marketIndex = { price: tasi.regularMarketPrice, change: tasi.regularMarketChange, changePercent: tasi.regularMarketChangePercent, high: tasi.regularMarketDayHigh, low: tasi.regularMarketDayLow, volume: tasi.regularMarketVolume, time: new Date().toISOString() };
+    } catch (e) {}
+    // جلب bulk quotes بالتوازي (حزم 50)
+    const chunks: string[][] = [];
+    for (let i = 0; i < symbols.length; i += 50) chunks.push(symbols.slice(i, i + 50));
+    await Promise.all(chunks.map(async (chunk) => {
+        try {
+            const quotes = await yfQuote(chunk);
+            if (!Array.isArray(quotes)) return;
+            for (const q of quotes) {
+                if (!q?.symbol) continue;
+                const change = q.regularMarketChangePercent || 0;
+                const sd = { symbol: q.symbol, companyName: SAUDI_STOCKS[q.symbol.split('.')[0]] || q.symbol, price: q.regularMarketPrice || 0, change, volume: q.regularMarketVolume || 0, volumeRatio: 1, rsi: 50, wave: "—", macd: { macd: 0, signal: 0, histogram: 0 }, bb: { middle: 0, upper: 0, lower: 0 } };
+                scanStatus.tickerData.set(q.symbol, sd);
+                if (change > 0) scanStatus.topGainers.push(sd);
+                else if (change < 0) scanStatus.topLosers.push(sd);
+            }
+        } catch (e) {}
+    }));
+    scanStatus.topGainers.sort((a, b) => b.change - a.change).splice(10);
+    scanStatus.topLosers.sort((a, b) => a.change - b.change).splice(10);
+    scanStatus.lastScan = new Date().toISOString();
+}
+
+app.get("/api/status", async (req, res) => {
+    // إذا لا توجد بيانات، اجلبها الآن فوراً (سريع < 5 ثواني)
+    if (scanStatus.tickerData.size === 0) {
+        try { await quickFetch(); } catch (e) { console.error('quickFetch error:', e); }
+    }
     res.json({
         ...scanStatus, tickerData: Array.from(scanStatus.tickerData.values()),
         activeTradesCount: Object.keys(activeTrades).length,
