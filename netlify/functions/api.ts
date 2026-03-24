@@ -5,27 +5,67 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { SAUDI_STOCKS } from '../../src/symbols';
 
 // ========= Yahoo Finance direct fetch =========
-const YF_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+const YF_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const YF_HEADERS: Record<string, string> = {
+    'User-Agent': YF_UA,
     'Accept': 'application/json',
     'Accept-Language': 'en-US,en;q=0.9',
 };
 
+// Crumb cache (يُعاد استخدامه في نفس الـ container)
+let yfCrumb: string | null = null;
+let yfCookies: string | null = null;
+let yfCrumbExpiry = 0;
+
+async function initYFCrumb(): Promise<void> {
+    if (yfCrumb && Date.now() < yfCrumbExpiry) return;
+    try {
+        // الخطوة 1: الحصول على cookies من Yahoo Finance
+        const r1 = await fetch('https://fc.yahoo.com', {
+            headers: { 'User-Agent': YF_UA },
+            redirect: 'follow'
+        });
+        const setCookie = r1.headers.get('set-cookie') || '';
+        yfCookies = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
+
+        // الخطوة 2: الحصول على crumb
+        const r2 = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+            headers: { 'User-Agent': YF_UA, 'Cookie': yfCookies }
+        });
+        if (r2.ok) {
+            yfCrumb = (await r2.text()).trim();
+            yfCrumbExpiry = Date.now() + 3600_000; // ساعة واحدة
+            console.log('✅ YF crumb initialized');
+        }
+    } catch (e) {
+        console.error('❌ Failed to get YF crumb:', e);
+    }
+}
+
 // fetch مع timeout (AbortController)
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, opts: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
+    const { timeoutMs = 6000, ...fetchOpts } = opts;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(url, { headers: YF_HEADERS, signal: controller.signal });
+        return await fetch(url, { ...fetchOpts, signal: controller.signal });
     } finally {
         clearTimeout(timer);
     }
 }
 
+function yfHeaders(): Record<string, string> {
+    const h: Record<string, string> = { ...YF_HEADERS };
+    if (yfCookies) h['Cookie'] = yfCookies;
+    return h;
+}
+
 async function yfChart(symbol: string, interval: string, period1: number): Promise<{ meta: any; quotes: any[] }> {
+    await initYFCrumb();
     const period2 = Math.floor(Date.now() / 1000);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&period1=${period1}&period2=${period2}`;
-    const res = await fetchWithTimeout(url, 8000);
+    const crumbQ = yfCrumb ? `&crumb=${encodeURIComponent(yfCrumb)}` : '';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&period1=${period1}&period2=${period2}${crumbQ}`;
+    const res = await fetchWithTimeout(url, { headers: yfHeaders(), timeoutMs: 8000 });
     if (!res.ok) throw new Error(`YF chart error ${res.status} for ${symbol}`);
     const data: any = await res.json();
     const result = data?.chart?.result?.[0];
@@ -46,9 +86,11 @@ async function yfChart(symbol: string, interval: string, period1: number): Promi
 }
 
 async function yfQuote(symbols: string | string[], timeoutMs = 6000): Promise<any> {
+    await initYFCrumb();
     const list = Array.isArray(symbols) ? symbols.join(',') : symbols;
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`;
-    const res = await fetchWithTimeout(url, timeoutMs);
+    const crumbQ = yfCrumb ? `&crumb=${encodeURIComponent(yfCrumb)}` : '';
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}${crumbQ}`;
+    const res = await fetchWithTimeout(url, { headers: yfHeaders(), timeoutMs });
     if (!res.ok) throw new Error(`YF quote error ${res.status}`);
     const data: any = await res.json();
     const results: any[] = data?.quoteResponse?.result || [];
