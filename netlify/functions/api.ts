@@ -542,6 +542,32 @@ app.get("/api/history/:symbol", async (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
+// ── Lightweight batch quotes (browser → Netlify → Yahoo Finance, no CORS issues)
+app.get("/api/quotes", async (req, res) => {
+    const raw = (req.query.symbols as string) || '';
+    const symbols = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 40);
+    if (!symbols.length) return res.status(400).json({ success: false, error: 'No symbols' });
+    try {
+        const results = await yfQuote(symbols, 8000);
+        const arr: any[] = Array.isArray(results) ? results : (results ? [results] : []);
+        res.json({ success: true, result: arr });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ── Raw OHLCV chart data (browser → Netlify → Yahoo Finance, no CORS issues)
+app.get("/api/chart/:symbol", async (req, res) => {
+    const { symbol } = req.params;
+    if (!isValidSaudiSymbol(symbol))
+        return res.status(400).json({ success: false, error: 'رمز غير صالح' });
+    try {
+        const period1 = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+        const { meta, quotes } = await yfChart(symbol, '1h', period1);
+        // Serialize Date objects to ISO strings so JSON round-trips cleanly
+        const serialized = quotes.map(q => ({ ...q, date: (q.date as Date).toISOString() }));
+        res.json({ success: true, meta, quotes: serialized });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 // إرسال إشعار تليجرام من الفرونت‌إند
 app.post("/api/notify", async (req, res) => {
     const { message } = req.body;

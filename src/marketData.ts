@@ -29,117 +29,32 @@ export function saveCache(stocks: any[], marketIndex: any): void {
   } catch { /* storage full — ignore */ }
 }
 
-// ---- CORS proxies tried in order
-// makeUrl  → builds the proxy request URL
-// extract  → pulls the raw Yahoo Finance JSON text out of the proxy's response
-//   (allorigins /get wraps in {"contents":"..."}, the others return raw text)
-const PROXIES: Array<{
-  name: string;
-  makeUrl: (u: string) => string;
-  extract: (raw: string) => string;
-}> = [
-  {
-    name:    'corsproxy.io',
-    makeUrl: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    extract: (t) => t,
-  },
-  {
-    name:    'allorigins',
-    makeUrl: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    extract: (t) => {
-      const j = JSON.parse(t);
-      if (!j?.contents) throw new Error('allorigins: empty contents');
-      return j.contents as string;
-    },
-  },
-  {
-    name:    'codetabs',
-    makeUrl: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    extract: (t) => t,
-  },
-  {
-    name:    'corsproxy.org',
-    makeUrl: (u) => `https://corsproxy.org/?${encodeURIComponent(u)}`,
-    extract: (t) => t,
-  },
-  {
-    name:    'cors.lol',
-    makeUrl: (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`,
-    extract: (t) => t,
-  },
-];
-
-async function proxyFetch(url: string, timeoutMs = 10000): Promise<any> {
-  const errs: string[] = [];
-  for (const proxy of PROXIES) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(proxy.makeUrl(url), { signal: controller.signal });
-      clearTimeout(timer);
-      const raw = await res.text();
-      if (!res.ok) {
-        errs.push(`${proxy.name}: HTTP ${res.status}`);
-        continue;
-      }
-      const extracted = proxy.extract(raw);
-      const parsed = JSON.parse(extracted);
-      // Yahoo Finance sometimes returns 200 with an error payload
-      const yfErr = parsed?.finance?.error ?? parsed?.quoteResponse?.error ?? parsed?.chart?.error;
-      if (yfErr) {
-        errs.push(`${proxy.name}: YF error ${yfErr.code ?? yfErr}`);
-        continue;
-      }
-      return parsed;
-    } catch (e: any) {
-      clearTimeout(timer);
-      const reason = e?.name === 'AbortError' ? 'timeout' : (e?.message ?? 'error');
-      errs.push(`${proxy.name}: ${reason}`);
-    }
-  }
-  const summary = errs.join(' | ');
-  console.error('[marketData] all proxies failed:', summary, '\nURL:', url);
-  throw new Error(`فشل الاتصال بـ Yahoo Finance (${summary})`);
-}
+// ---- All Yahoo Finance calls go through the Netlify function (server-side, no CORS)
 
 export function getAllSymbols(): string[] {
   return Object.keys(SAUDI_STOCKS).map(s => `${s}.SR`);
 }
 
 export async function fetchQuotesBatch(symbols: string[]): Promise<any[]> {
-  const url =
-    `https://query2.finance.yahoo.com/v7/finance/quote` +
-    `?symbols=${encodeURIComponent(symbols.join(','))}` +
-    `&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketChange,` +
-    `regularMarketVolume,regularMarketDayHigh,regularMarketDayLow,averageDailyVolume10Day`;
-  const data = await proxyFetch(url);
-  return data?.quoteResponse?.result ?? [];
+  const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`);
+  if (!res.ok) throw new Error(`Quotes API: HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'فشل جلب بيانات الأسهم');
+  return data.result ?? [];
 }
 
 export async function fetchChart(
   symbol: string,
-  interval: string,
-  range: string,
+  _interval: string,
+  _range: string,
 ): Promise<{ meta: any; quotes: any[] }> {
-  const url =
-    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?interval=${interval}&range=${range}&includePrePost=false`;
-  const data = await proxyFetch(url, 15000);
-  const result = data?.chart?.result?.[0];
-  if (!result) throw new Error(`No chart data for ${symbol}`);
-  const ts: number[] = result.timestamp ?? [];
-  const q = result.indicators?.quote?.[0] ?? {};
-  const quotes = ts
-    .map((t, i) => ({
-      date: new Date(t * 1000),
-      open:   q.open?.[i]   ?? null,
-      high:   q.high?.[i]   ?? null,
-      low:    q.low?.[i]    ?? null,
-      close:  q.close?.[i]  ?? null,
-      volume: q.volume?.[i] ?? null,
-    }))
-    .filter(q => q.close !== null);
-  return { meta: result.meta, quotes };
+  const res = await fetch(`/api/chart/${encodeURIComponent(symbol)}`);
+  if (!res.ok) throw new Error(`Chart API: HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'فشل جلب بيانات الرسم البياني');
+  // dates come back as ISO strings from JSON — convert to Date objects
+  const quotes = (data.quotes as any[]).map(q => ({ ...q, date: new Date(q.date) }));
+  return { meta: data.meta, quotes };
 }
 
 // ---- Technical Indicators ----
