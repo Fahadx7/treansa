@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(npm run:*)",
+      "Bash(node -e \":*)"
     ]
   }
 }
