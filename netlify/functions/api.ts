@@ -1,63 +1,78 @@
 import express from "express";
 import serverless from "serverless-http";
-import yahooFinance from 'yahoo-finance2';
-import fetch from 'node-fetch';
 import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
 import { SAUDI_STOCKS } from '../../src/symbols';
 
-yahooFinance.setGlobalConfig({
-    validation: { logErrors: false, logNotices: false }
-});
+// ========= Yahoo Finance direct fetch (replaces yahoo-finance2 package) =========
+const YF_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+};
 
+async function yfChart(symbol: string, interval: string, period1: number): Promise<{ meta: any; quotes: any[] }> {
+    const period2 = Math.floor(Date.now() / 1000);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&period1=${period1}&period2=${period2}`;
+    const res = await fetch(url, { headers: YF_HEADERS });
+    if (!res.ok) throw new Error(`YF chart error ${res.status} for ${symbol}`);
+    const data: any = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) throw new Error(`No chart data for ${symbol}`);
+    const timestamps: number[] = result.timestamp || [];
+    const q = result.indicators?.quote?.[0] || {};
+    const quotes = timestamps
+        .map((t: number, i: number) => ({
+            date: new Date(t * 1000),
+            open:   q.open?.[i]   ?? null,
+            high:   q.high?.[i]   ?? null,
+            low:    q.low?.[i]    ?? null,
+            close:  q.close?.[i]  ?? null,
+            volume: q.volume?.[i] ?? null,
+        }))
+        .filter((q: any) => q.close !== null && q.close !== undefined);
+    return { meta: result.meta, quotes };
+}
+
+async function yfQuote(symbols: string | string[]): Promise<any> {
+    const list = Array.isArray(symbols) ? symbols.join(',') : symbols;
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`;
+    const res = await fetch(url, { headers: YF_HEADERS });
+    if (!res.ok) throw new Error(`YF quote error ${res.status}`);
+    const data: any = await res.json();
+    const results: any[] = data?.quoteResponse?.result || [];
+    return Array.isArray(symbols) ? results : (results[0] ?? null);
+}
+
+// ========= Telegram =========
 const cleanToken = (t: string) => {
     if (!t) return "";
     return t.replace(/\s/g, '').replace(/^TOKEN=/i, '').replace(/^"|"$/g, '').trim();
 };
-
 const TOKEN = cleanToken(process.env.TELEGRAM_TOKEN || "");
 const CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "")
     .replace(/\s/g, '').replace(/^ID=/i, '').replace(/^"|"$/g, '').trim();
 
 let botStatus = {
-    isValid: false,
-    name: null as string | null,
-    username: null as string | null,
-    lastError: null as string | null,
-    lastChecked: null as string | null,
-    isFormatValid: false
+    isValid: false, name: null as string | null, username: null as string | null,
+    lastError: null as string | null, lastChecked: null as string | null, isFormatValid: false
 };
-
 const isTokenFormatValid = (t: string) => /^\d+:[A-Za-z0-9_-]{35,}$/.test(t);
 
 let activeTrades: Record<string, any> = {};
 let customAlerts: { symbol: string, targetPrice?: number, targetRsi?: number, triggered: boolean, createdAt: string }[] = [];
-
 let scanStatus = {
-    lastScan: null as string | null,
-    isScanning: false,
-    processedCount: 0,
-    totalCount: 0,
-    alerts: [] as any[],
-    topGainers: [] as any[],
-    topLosers: [] as any[],
-    liquidityEntry: [] as any[],
-    liquidityExit: [] as any[],
-    waveStocks: [] as any[],
-    tickerData: new Map<string, any>(),
-    marketIndex: null as any,
-    telegramBotName: null as string | null
+    lastScan: null as string | null, isScanning: false, processedCount: 0, totalCount: 0,
+    alerts: [] as any[], topGainers: [] as any[], topLosers: [] as any[],
+    liquidityEntry: [] as any[], liquidityExit: [] as any[], waveStocks: [] as any[],
+    tickerData: new Map<string, any>(), marketIndex: null as any, telegramBotName: null as string | null
 };
 
 async function checkBot() {
     botStatus.lastChecked = new Date().toISOString();
     botStatus.isFormatValid = isTokenFormatValid(TOKEN);
-    if (!TOKEN || TOKEN.includes("YOUR_TOKEN")) {
-        botStatus.isValid = false; botStatus.lastError = "التوكن غير مضبوط"; return;
-    }
-    if (!botStatus.isFormatValid) {
-        botStatus.isValid = false; botStatus.lastError = "تنسيق التوكن غير صحيح"; return;
-    }
+    if (!TOKEN || TOKEN.includes("YOUR_TOKEN")) { botStatus.isValid = false; botStatus.lastError = "التوكن غير مضبوط"; return; }
+    if (!botStatus.isFormatValid) { botStatus.isValid = false; botStatus.lastError = "تنسيق التوكن غير صحيح"; return; }
     try {
         const res = await fetch(`https://api.telegram.org/bot${TOKEN}/getMe`);
         const data: any = await res.json();
@@ -65,27 +80,24 @@ async function checkBot() {
             botStatus.isValid = true; botStatus.name = data.result.first_name;
             botStatus.username = data.result.username; botStatus.lastError = null;
             (scanStatus as any).telegramBotName = data.result.username;
-        } else {
-            botStatus.isValid = false;
-            botStatus.lastError = `خطأ ${data.error_code}: ${data.description}`;
-        }
+        } else { botStatus.isValid = false; botStatus.lastError = `خطأ ${data.error_code}: ${data.description}`; }
     } catch (e) { botStatus.isValid = false; botStatus.lastError = `خطأ في الاتصال: ${e}`; }
 }
 
 async function sendTelegramMsg(message: string) {
     if (!TOKEN || TOKEN.includes("YOUR_TOKEN")) return;
     try {
-        const response = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chat_id: CHAT_ID, text: message, parse_mode: "Markdown" })
         });
-        const data: any = await response.json().catch(() => ({}));
-        if (!response.ok) return { success: false, error: data.description || `HTTP ${response.status}` };
+        const data: any = await res.json().catch(() => ({}));
+        if (!res.ok) return { success: false, error: data.description || `HTTP ${res.status}` };
         return { success: true };
     } catch (e) { return { success: false, error: String(e) }; }
 }
 
+// ========= Technical Indicators =========
 function calculateRSI(closes: number[], period = 14) {
     if (closes.length <= period) return 50;
     let gains: number[] = [], losses: number[] = [];
@@ -160,43 +172,48 @@ function calculateStochasticRSI(closes: number[], rsiPeriod = 14, stochPeriod = 
     return { k: Number(k.toFixed(2)), d: Number(d.toFixed(2)) };
 }
 
+// ========= Stock Analysis =========
 async function analyzeStock(symbol: string) {
     try {
         const period1 = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
-        const result = await yahooFinance.chart(symbol, { interval: '5m', period1 }, { validateResult: false }) as any;
+        const result = await yfChart(symbol, '5m', period1);
 
-        if (!result || !result.quotes || result.quotes.length < 50) {
+        if (!result.quotes || result.quotes.length < 50) {
             try {
-                const quote = await yahooFinance.quote(symbol, {}, { validateResult: false }) as any;
-                if (quote) scanStatus.tickerData.set(symbol, { symbol, companyName: SAUDI_STOCKS[symbol.split('.')[0]] || symbol, price: quote.regularMarketPrice, change: quote.regularMarketChangePercent || 0, volume: quote.regularMarketVolume || 0, volumeRatio: 1, rsi: 50, wave: "غير محدد", macd: { macd: 0, signal: 0, histogram: 0 }, bb: { middle: 0, upper: 0, lower: 0 } });
+                const quote = await yfQuote(symbol);
+                if (quote) scanStatus.tickerData.set(symbol, {
+                    symbol, companyName: SAUDI_STOCKS[symbol.split('.')[0]] || symbol,
+                    price: quote.regularMarketPrice, change: quote.regularMarketChangePercent || 0,
+                    volume: quote.regularMarketVolume || 0, volumeRatio: 1, rsi: 50, wave: "غير محدد",
+                    macd: { macd: 0, signal: 0, histogram: 0 }, bb: { middle: 0, upper: 0, lower: 0 }
+                });
             } catch (e) {}
             return;
         }
 
-        const quotes = (result.quotes as any[]).filter(q => q.close !== null && q.volume !== null);
-        if (quotes.length < 50) return;
-
-        const closes  = quotes.map(q => q.close as number);
-        const highs   = quotes.map(q => (q.high  ?? q.close) as number);
-        const lows    = quotes.map(q => (q.low   ?? q.close) as number);
-        const volumes = quotes.map(q => q.volume as number);
-        const lastClose = closes[closes.length - 1];
+        const quotes = result.quotes;
+        const closes  = quotes.map((q: any) => q.close as number);
+        const highs   = quotes.map((q: any) => (q.high  ?? q.close) as number);
+        const lows    = quotes.map((q: any) => (q.low   ?? q.close) as number);
+        const volumes = quotes.map((q: any) => q.volume as number);
+        const lastClose  = closes[closes.length - 1];
         const lastVolume = volumes[volumes.length - 1];
-        const sma50 = closes.slice(-50).reduce((a, b) => a + b, 0) / 50;
-        const rsi = calculateRSI(closes, 14);
-        const macdData = calculateMACD(closes);
-        const bbData = calculateBollingerBands(closes);
-        const atr = calculateATR(highs, lows, closes, 14);
-        const stochRsi = calculateStochasticRSI(closes, 14, 14);
-        const avgVolume = volumes.slice(-10).reduce((a, b) => a + b, 0) / 10;
+        const sma50      = closes.slice(-50).reduce((a, b) => a + b, 0) / 50;
+        const rsi        = calculateRSI(closes, 14);
+        const macdData   = calculateMACD(closes);
+        const bbData     = calculateBollingerBands(closes);
+        const atr        = calculateATR(highs, lows, closes, 14);
+        const stochRsi   = calculateStochasticRSI(closes, 14, 14);
+        const avgVolume  = volumes.slice(-10).reduce((a, b) => a + b, 0) / 10;
         const companyName = SAUDI_STOCKS[symbol.split('.')[0]] || symbol;
         const prevClose: number = result.meta?.chartPreviousClose ?? result.meta?.previousClose ?? closes[0];
         const changePercent = prevClose > 0 ? ((lastClose - prevClose) / prevClose) * 100 : 0;
-        const volumeRatio = avgVolume > 0 ? lastVolume / avgVolume : 1;
+        const volumeRatio   = avgVolume > 0 ? lastVolume / avgVolume : 1;
 
+        // Elliott Waves
         let elliottWave = "غير محدد";
         const windowSize = 10, recentCloses = closes.slice(-40);
-        const pivots: { type: 'high' | 'low', price: number, index: number }[] = [];
+        const pivots: { type: 'high' | 'low'; price: number; index: number }[] = [];
         for (let i = windowSize; i < recentCloses.length - windowSize; i++) {
             const c = recentCloses[i], l = recentCloses.slice(i - windowSize, i), r = recentCloses.slice(i + 1, i + windowSize + 1);
             if (c > Math.max(...l) && c > Math.max(...r)) pivots.push({ type: 'high', price: c, index: i });
@@ -256,7 +273,7 @@ async function analyzeStock(symbol: string) {
             scanStatus.alerts.unshift({ type: 'exit', symbol, companyName, price: lastClose, profit, time: new Date().toISOString() });
         }
     } catch (e: any) {
-        if (e.message?.includes('No data found') || e.message?.includes('delisted')) return;
+        if (e.message?.includes('No data') || e.message?.includes('delisted')) return;
         console.error(`❌ خطأ في تحليل ${symbol}:`, e.message || e);
     }
 }
@@ -270,27 +287,28 @@ async function startFullScan() {
     scanStatus.waveStocks = [];
 
     try {
-        const tasiResult = await yahooFinance.quote('^TASI', {}, { validateResult: false }) as any;
+        const tasiResult = await yfQuote('^TASI');
         if (tasiResult) scanStatus.marketIndex = { price: tasiResult.regularMarketPrice, change: tasiResult.regularMarketChange, changePercent: tasiResult.regularMarketChangePercent, high: tasiResult.regularMarketDayHigh, low: tasiResult.regularMarketDayLow, volume: tasiResult.regularMarketVolume, time: new Date().toISOString() };
     } catch (e) {}
 
     const symbols = Object.keys(SAUDI_STOCKS).map(s => `${s}.SR`);
     scanStatus.totalCount = symbols.length;
 
+    // Step 1: Bulk quotes (20 at a time)
     for (let i = 0; i < symbols.length; i += 20) {
         const chunk = symbols.slice(i, i + 20);
         try {
-            const quotes = await yahooFinance.quote(chunk, {}, { validateResult: false }) as any;
+            const quotes = await yfQuote(chunk);
             if (Array.isArray(quotes)) {
                 for (const q of quotes) {
-                    if (!q || !q.symbol) continue;
+                    if (!q?.symbol) continue;
                     scanStatus.tickerData.set(q.symbol, { symbol: q.symbol, companyName: SAUDI_STOCKS[q.symbol.split('.')[0]] || q.symbol, price: q.regularMarketPrice || 0, change: q.regularMarketChangePercent || 0, volume: q.regularMarketVolume || 0, volumeRatio: 1, rsi: 50, wave: "جاري التحليل...", macd: { macd: 0, signal: 0, histogram: 0 }, bb: { middle: 0, upper: 0, lower: 0 } });
                 }
             }
         } catch (e: any) {
             for (const s of chunk) {
                 try {
-                    const q = await yahooFinance.quote(s, {}, { validateResult: false }) as any;
+                    const q = await yfQuote(s);
                     if (q?.symbol) scanStatus.tickerData.set(q.symbol, { symbol: q.symbol, companyName: SAUDI_STOCKS[q.symbol.split('.')[0]] || q.symbol, price: q.regularMarketPrice || 0, change: q.regularMarketChangePercent || 0, volume: q.regularMarketVolume || 0, volumeRatio: 1, rsi: 50, wave: "جاري التحليل...", macd: { macd: 0, signal: 0, histogram: 0 }, bb: { middle: 0, upper: 0, lower: 0 } });
                 } catch (innerE) {}
             }
@@ -298,6 +316,7 @@ async function startFullScan() {
         await new Promise(r => setTimeout(r, 300));
     }
 
+    // Step 2: Deep analysis in small chunks
     for (let i = 0; i < symbols.length; i += 5) {
         const chunk = symbols.slice(i, i + 5);
         await Promise.all(chunk.map(async s => {
@@ -319,6 +338,7 @@ async function startFullScan() {
     scanStatus.liquidityExit.sort((a, b) => b.volumeRatio - a.volumeRatio).splice(10);
 }
 
+// ========= Rate Limiter =========
 const _rlStore = new Map<string, { count: number; resetAt: number }>();
 function checkRateLimit(ip: string, maxRequests: number, windowMs: number): boolean {
     const now = Date.now(), rec = _rlStore.get(ip);
@@ -343,20 +363,16 @@ app.use((_, res, next) => {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
 });
-
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50kb' }));
 
-// Routes (no /api prefix — basePath is stripped by serverless-http)
 app.get("/api/status", (req, res) => {
-    const tickerArray = Array.from(scanStatus.tickerData.values());
     res.json({
-        ...scanStatus, tickerData: tickerArray,
+        ...scanStatus, tickerData: Array.from(scanStatus.tickerData.values()),
         activeTradesCount: Object.keys(activeTrades).length,
         activeTrades: Object.values(activeTrades),
         customAlerts: customAlerts.filter(a => !a.triggered),
-        telegramConnected: botStatus.isValid,
-        telegramBotName: botStatus.username,
+        telegramConnected: botStatus.isValid, telegramBotName: botStatus.username,
         botStatusError: botStatus.isValid ? null : botStatus.lastError
     });
 });
@@ -367,9 +383,7 @@ app.post("/api/feedback", async (req, res) => {
     const { name, email, message, type } = req.body;
     if (!message || typeof message !== 'string' || message.trim().length < 5 || message.length > 2000) return res.status(400).json({ success: false, error: "الرسالة يجب أن تكون بين 5 و 2000 حرف." });
     if (botStatus.isValid && CHAT_ID) {
-        try {
-            await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: CHAT_ID, text: `📝 *ملاحظة جديدة*\n👤 ${name || 'مجهول'}\n📧 ${email || '-'}\n🏷️ ${type || 'عام'}\n\n${message}`, parse_mode: 'Markdown' }) });
-        } catch (e) {}
+        try { await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: CHAT_ID, text: `📝 *ملاحظة*\n👤 ${name || 'مجهول'}\n📧 ${email || '-'}\n🏷️ ${type || 'عام'}\n\n${message}`, parse_mode: 'Markdown' }) }); } catch (e) {}
     }
     res.json({ success: true, message: "تم استلام ملاحظتك بنجاح، شكراً لك!" });
 });
@@ -396,9 +410,7 @@ app.post("/api/test-telegram", async (req, res) => {
         const result = await sendTelegramMsg(`🔔 *رسالة تجريبية*\n✅ الإعدادات صحيحة!\n🤖 البوت: ${botStatus.name} (@${botStatus.username})\n⏰ ${new Date().toLocaleTimeString()}`);
         if (result && !result.success) throw new Error((result as any).error);
         res.json({ success: true, message: `تم الإرسال عبر @${botStatus.username}`, chatId: CHAT_ID, botName: botStatus.name });
-    } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+    } catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
 });
 
 app.post("/api/scan", async (req, res) => {
@@ -414,19 +426,16 @@ app.get("/api/history/:symbol", async (req, res) => {
     if (!isValidSaudiSymbol(symbol)) return res.status(400).json({ success: false, error: "رمز السهم غير صالح" });
     try {
         const period1 = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
-        const result = await yahooFinance.chart(symbol, { interval: '1h', period1 }, { validateResult: false }) as any;
-        if (!result?.quotes?.length) return res.json({ success: false, error: "بيانات غير متوفرة" });
-        const quotes = (result.quotes as any[]).filter(q => q.close !== null);
-        const startIndex = Math.max(0, quotes.length - 50);
-        const history = quotes.slice(startIndex).map((q, i) => {
-            const sub = quotes.slice(0, startIndex + i + 1).map((sq: any) => sq.close as number);
+        const result = await yfChart(symbol, '1h', period1);
+        if (!result.quotes.length) return res.json({ success: false, error: "بيانات غير متوفرة" });
+        const startIndex = Math.max(0, result.quotes.length - 50);
+        const history = result.quotes.slice(startIndex).map((q: any, i: number) => {
+            const sub = result.quotes.slice(0, startIndex + i + 1).map((sq: any) => sq.close as number);
             const macd = calculateMACD(sub), bb = calculateBollingerBands(sub);
             return { time: new Date(q.date).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }), fullDate: q.date, price: Number(q.close.toFixed(2)), macd: macd.macd, signal: macd.signal, histogram: macd.histogram, bbUpper: bb.upper, bbMiddle: bb.middle, bbLower: bb.lower };
         });
         res.json({ success: true, history });
-    } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+    } catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
 });
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
@@ -444,12 +453,10 @@ app.post("/api/ai-analysis", async (req, res) => {
 RSI(14): ${rsi?.toFixed?.(1) ?? rsi} | Stoch RSI: K=${stoch?.k ?? 'N/A'} D=${stoch?.d ?? 'N/A'}
 موجة إليوت: ${wave || 'غير محدد'} | MACD Histogram: ${macd?.histogram ?? 'N/A'}
 BB: Upper=${bb?.upper ?? 'N/A'} Lower=${bb?.lower ?? 'N/A'} | ATR(14): ${atr ?? 'N/A'}
-قدم: 1) الاتجاه المتوقع ومستوى الثقة 2) نقاط الدخول المثالية 3) الأهداف السعرية 4) وقف الخسارة المقترح 5) نصيحة إدارة المخاطر`;
+قدم: 1) الاتجاه المتوقع ومستوى الثقة 2) نقاط الدخول المثالية 3) الأهداف السعرية 4) وقف الخسارة 5) إدارة المخاطر`;
         const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: [{ parts: [{ text: prompt }] }] });
         res.json({ success: true, analysis: response.text });
-    } catch (e: any) {
-        res.status(500).json({ success: false, error: "فشل تحليل الذكاء الاصطناعي." });
-    }
+    } catch (e: any) { res.status(500).json({ success: false, error: "فشل تحليل الذكاء الاصطناعي." }); }
 });
 
 app.post("/api/ai-news", async (req, res) => {
@@ -460,17 +467,14 @@ app.post("/api/ai-news", async (req, res) => {
     if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط." });
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const prompt = `ابحث عن آخر الأخبار المتعلقة بشركة ${companyName} (${symbol}) في السوق السعودي. قدم قائمة بأهم 5 أخبار حديثة بتنسيق JSON فقط.`;
         const response = await ai.models.generateContent({
             model: "gemini-2.0-flash",
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{ parts: [{ text: `ابحث عن آخر الأخبار المتعلقة بشركة ${companyName} (${symbol}) في السوق السعودي. قدم أهم 5 أخبار حديثة بتنسيق JSON فقط.` }] }],
             config: { tools: [{ googleSearch: {} }], responseMimeType: "application/json", responseSchema: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, summary: { type: Type.STRING }, date: { type: Type.STRING }, source: { type: Type.STRING }, url: { type: Type.STRING } }, required: ["title", "summary", "date", "source", "url"] } } }
         });
         try { const newsData = JSON.parse(response.text || "[]"); res.json({ success: true, news: Array.isArray(newsData) ? newsData : [] }); }
         catch { res.json({ success: true, news: [] }); }
-    } catch (e: any) {
-        res.status(500).json({ success: false, error: "فشل جلب الأخبار." });
-    }
+    } catch (e: any) { res.status(500).json({ success: false, error: "فشل جلب الأخبار." }); }
 });
 
 app.post("/api/ai-logo", async (req, res) => {
@@ -485,10 +489,7 @@ app.post("/api/ai-logo", async (req, res) => {
             if ((part as any).inlineData) images.push(`data:image/png;base64,${(part as any).inlineData.data}`);
         }
         res.json({ success: true, images });
-    } catch (e: any) {
-        res.status(500).json({ success: false, error: "فشل توليد الشعار." });
-    }
+    } catch (e: any) { res.status(500).json({ success: false, error: "فشل توليد الشعار." }); }
 });
 
-// Export handler — basePath strips '/.netlify/functions/api' so routes above receive just /status, /scan etc.
 export const handler = serverless(app);

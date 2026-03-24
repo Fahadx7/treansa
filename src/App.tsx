@@ -348,7 +348,7 @@ const LogoGenerator = () => {
             <img src={url} alt={`Logo concept ${i}`} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <button 
-                onClick={() => window.open(url, '_blank')}
+                onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
                 className="p-2 bg-white text-black rounded-full shadow-lg"
               >
                 <ExternalLink className="w-4 h-4" />
@@ -1209,24 +1209,17 @@ const FeedbackModal = ({ onClose, user }: { onClose: () => void, user: FirebaseU
 
     setIsSending(true);
     try {
-      // 1. Send to API (for Telegram)
-      await fetch('/api/feedback', {
+      const response = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, type, message })
       });
 
-      // 2. Save to Firestore
-      const feedbackData = {
-        userId: user?.uid || null,
-        name,
-        email,
-        type,
-        message,
-        createdAt: serverTimestamp()
-      };
-      
-      await addDoc(collection(db, 'feedback'), feedbackData);
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'فشل إرسال الملاحظة');
+      }
 
       setStatus({ type: 'success', message: '✅ شكراً لك! تم استلام ملاحظتك بنجاح.' });
       setTimeout(onClose, 2000);
@@ -1853,24 +1846,25 @@ function App() {
       const currentPrice = stock?.price || position.entryPrice;
       const proceeds = currentPrice * position.quantity;
       
-      // Update balance
+      const borrowedAmount = Math.max((position.entryPrice * position.quantity) - position.marginRequired, 0);
+      const realizedPnl = (currentPrice - position.entryPrice) * position.quantity;
+      const balanceRelease = proceeds - borrowedAmount;
+
       await updateDoc(doc(db, 'margin_accounts', user.uid), {
-        balance: marginAccount.balance + proceeds,
-        marginUsed: marginAccount.marginUsed - (position.entryPrice * position.quantity)
+        balance: marginAccount.balance + balanceRelease,
+        marginUsed: Math.max(marginAccount.marginUsed - borrowedAmount, 0),
+        updatedAt: serverTimestamp()
       });
 
-      // Delete position
-      await deleteDoc(doc(db, 'margin_positions', position.id));
-      
-      // Log activity
-      await addDoc(collection(db, 'activities'), {
-        uid: user.uid,
-        type: 'margin_close',
+      await updateDoc(doc(db, 'margin_positions', position.id), {
+        currentPrice,
+        status: 'closed',
+        closedAt: serverTimestamp()
+      });
+
+      console.log('Margin position closed', {
         symbol: position.symbol,
-        quantity: position.quantity,
-        price: currentPrice,
-        pnl: (currentPrice - position.entryPrice) * position.quantity,
-        timestamp: new Date().toISOString()
+        realizedPnl
       });
     } catch (error) {
       console.error("Error closing margin position:", error);
@@ -1880,8 +1874,10 @@ function App() {
   const openMarginPosition = async (symbol: string, quantity: number, price: number) => {
     if (!user || !marginAccount) return;
 
+    const leverage = 2;
     const cost = quantity * price;
-    const marginRequirement = cost * 0.5; // 50% initial margin
+    const marginRequirement = cost / leverage;
+    const borrowedAmount = cost - marginRequirement;
 
     if (marginAccount.balance < marginRequirement) {
       alert("رصيد غير كافٍ لفتح هذا المركز بالهامش.");
@@ -1889,30 +1885,22 @@ function App() {
     }
 
     try {
-      // Create position
       await addDoc(collection(db, 'margin_positions'), {
-        uid: user.uid,
+        userId: user.uid,
         symbol,
         quantity,
         entryPrice: price,
-        timestamp: new Date().toISOString(),
-        status: 'open'
+        currentPrice: price,
+        leverage,
+        marginRequired: marginRequirement,
+        status: 'open',
+        openedAt: serverTimestamp()
       });
 
-      // Update account
       await updateDoc(doc(db, 'margin_accounts', user.uid), {
         balance: marginAccount.balance - marginRequirement,
-        marginUsed: marginAccount.marginUsed + cost
-      });
-
-      // Log activity
-      await addDoc(collection(db, 'activities'), {
-        uid: user.uid,
-        type: 'margin_open',
-        symbol,
-        quantity,
-        price,
-        timestamp: new Date().toISOString()
+        marginUsed: marginAccount.marginUsed + borrowedAmount,
+        updatedAt: serverTimestamp()
       });
     } catch (error) {
       console.error("Error opening margin position:", error);
