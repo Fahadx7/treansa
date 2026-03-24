@@ -1,0 +1,2533 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useEffect, useState } from 'react';
+import { 
+  Radar, 
+  TrendingUp, 
+  AlertCircle, 
+  CheckCircle2, 
+  Loader2, 
+  RefreshCw, 
+  Bell, 
+  History, 
+  Zap, 
+  Send,
+  Brain,
+  Calculator,
+  ShieldCheck,
+  Target,
+  Wallet,
+  TrendingDown,
+  Activity,
+  ChevronRight,
+  ArrowUpRight,
+  ArrowDownRight,
+  BarChart3,
+  Clock,
+  PieChart,
+  ExternalLink,
+  MessageSquare,
+  Star,
+  User,
+  Sun,
+  Moon,
+  Newspaper,
+  Search,
+  List as ListIcon
+} from 'lucide-react';
+// GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
+import Markdown from 'react-markdown';
+import { motion, AnimatePresence } from 'motion/react';
+import * as ReactWindow from 'react-window';
+import * as AutoSizerModule from 'react-virtualized-auto-sizer';
+import { 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area, 
+  BarChart, 
+  Bar,
+  ReferenceLine
+} from 'recharts';
+
+import { 
+  auth, 
+  db, 
+  loginWithGoogle, 
+  logout, 
+  onAuthStateChanged, 
+  serverTimestamp, 
+  handleFirestoreError, 
+  OperationType,
+  FirebaseUser
+} from './firebase';
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  onSnapshot, 
+  addDoc,
+  getDocs,
+  updateDoc
+} from 'firebase/firestore';
+
+const List = (ReactWindow as any).FixedSizeList;
+const AutoSizerAny = (AutoSizerModule as any).default || (AutoSizerModule as any).AutoSizer || AutoSizerModule;
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let errorMessage = "حدث خطأ غير متوقع.";
+      try {
+        const parsed = JSON.parse(this.state.error.message);
+        if (parsed.error && parsed.error.includes("Missing or insufficient permissions")) {
+          errorMessage = "ليس لديك صلاحية للقيام بهذا الإجراء.";
+        }
+      } catch (e) {
+        // Not a JSON error
+      }
+
+      return (
+        <div className="min-h-screen bg-app-bg flex items-center justify-center p-6 text-center" dir="rtl">
+          <div className="bg-app-surface border border-app-border p-8 rounded-3xl max-w-md w-full space-y-4">
+            <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle className="w-8 h-8 text-rose-500" />
+            </div>
+            <h2 className="text-xl font-bold text-app-text">عذراً، حدث خطأ</h2>
+            <p className="text-app-text-muted text-sm">{errorMessage}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-app-bg hover:bg-app-surface text-app-text font-bold rounded-xl border border-app-border transition-all"
+            >
+              إعادة تحميل الصفحة
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+interface Trade {
+  symbol: string;
+  companyName: string;
+  entryPrice: number;
+  entryTime: string;
+  rsi: number;
+  sma50: number;
+  wave?: string;
+}
+
+interface Alert {
+  type: 'entry' | 'exit';
+  symbol: string;
+  companyName: string;
+  price: number;
+  time: string;
+  wave?: string;
+  profit?: number;
+}
+
+interface StockStats {
+  symbol: string;
+  companyName: string;
+  price: number;
+  change: number;
+  volume: number;
+  volumeRatio: number;
+  rsi: number;
+  wave?: string;
+  macd?: {
+    macd: number;
+    signal: number;
+    histogram: number;
+  };
+  bb?: {
+    middle: number;
+    upper: number;
+    lower: number;
+  };
+  atr?: number;
+  stochRsi?: {
+    k: number;
+    d: number;
+  };
+}
+
+interface CustomAlert {
+  symbol: string;
+  targetPrice?: number;
+  targetRsi?: number;
+  triggered: boolean;
+  createdAt: string;
+}
+
+interface MarginAccount {
+  userId: string;
+  balance: number;
+  equity: number;
+  marginUsed: number;
+  maintenanceMargin: number;
+  updatedAt: any;
+}
+
+interface MarginPosition {
+  id: string;
+  userId: string;
+  symbol: string;
+  quantity: number;
+  entryPrice: number;
+  currentPrice: number;
+  leverage: number;
+  marginRequired: number;
+  status: 'open' | 'closed';
+  openedAt: any;
+  closedAt?: any;
+}
+
+interface Status {
+  lastScan: string | null;
+  isScanning: boolean;
+  processedCount: number;
+  totalCount: number;
+  activeTradesCount: number;
+  activeTrades: Trade[];
+  alerts: Alert[];
+  topGainers: StockStats[];
+  topLosers: StockStats[];
+  liquidityEntry: StockStats[];
+  liquidityExit: StockStats[];
+  waveStocks: StockStats[];
+  tickerData: StockStats[];
+  customAlerts: CustomAlert[];
+  marketIndex: {
+    price: number;
+    change: number;
+    changePercent: number;
+    high: number;
+    low: number;
+    volume: number;
+    time: string;
+  } | null;
+  telegramConnected: boolean;
+  telegramBotName: string | null;
+  botStatusError: string | null;
+}
+
+const TickerTape = ({ data, marketIndex }: { data: StockStats[], marketIndex: any }) => {
+  if (!data || data.length === 0) return (
+    <div className="bg-app-surface border-b border-app-border h-10 flex items-center px-4 text-[10px] text-app-text-muted italic">
+      جاري جلب بيانات السوق...
+    </div>
+  );
+  
+  // Create a single unit of ticker content
+  const tickerItems = (
+    <>
+      {marketIndex && (
+        <div className="flex items-center gap-3 text-xs font-bold border-l border-app-border pl-12">
+          <span className="text-amber-500">TASI</span>
+          <span className="font-mono text-app-text">{marketIndex.price.toLocaleString()}</span>
+          <span className={`flex items-center gap-1 ${marketIndex.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {marketIndex.change >= 0 ? '▲' : '▼'}
+            {Math.abs(marketIndex.changePercent).toFixed(2)}%
+          </span>
+        </div>
+      )}
+      {data.map((item, i) => (
+        <div key={i} className="flex items-center gap-3 text-xs font-bold">
+          <span className="text-app-text">{item.companyName}</span>
+          <span className="font-mono text-app-text-muted">{item.price.toFixed(2)}</span>
+          <span className={`flex items-center gap-1 ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {item.change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingUp className="w-3 h-3 rotate-180" />}
+            {Math.abs(item.change).toFixed(2)}%
+          </span>
+        </div>
+      ))}
+    </>
+  );
+
+  return (
+    <div className="bg-app-surface/80 backdrop-blur-md border-b border-app-border h-10 flex items-center overflow-hidden whitespace-nowrap sticky top-0 z-[60]">
+      <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-app-bg to-transparent z-10" />
+      <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-app-bg to-transparent z-10" />
+      
+      <motion.div
+        animate={{ x: [0, -200 * (data.length + (marketIndex ? 1 : 0))] }}
+        transition={{
+          duration: (data.length + 1) * 3,
+          repeat: Infinity,
+          ease: "linear",
+        }}
+        className="flex gap-12 px-8"
+      >
+        {tickerItems}
+        {tickerItems}
+        {tickerItems}
+      </motion.div>
+    </div>
+  );
+};
+
+const LogoGenerator = () => {
+  const [logos, setLogos] = useState<string[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const generateLogo = async () => {
+    setIsGenerating(true);
+    try {
+      const response = await fetch('/api/ai-logo', { method: 'POST' });
+      const data = await response.json();
+      if (data.success && data.images?.length) {
+        setLogos(prev => [...data.images, ...prev]);
+      }
+    } catch (error) {
+      console.error("Error generating logo:", error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="p-6 bg-app-surface border border-app-border rounded-2xl space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-500/10 rounded-xl">
+            <Brain className="w-5 h-5 text-blue-500" />
+          </div>
+          <div>
+            <h3 className="font-bold text-app-text">ابتكار هوية "تريندسا"</h3>
+            <p className="text-[10px] text-app-text-muted">استخدم الذكاء الاصطناعي لتصميم شعار احترافي</p>
+          </div>
+        </div>
+        <button
+          onClick={generateLogo}
+          disabled={isGenerating}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
+        >
+          {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+          ابتكار شعار
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {logos.map((url, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="aspect-square rounded-xl overflow-hidden border border-app-border bg-white group relative"
+          >
+            <img src={url} alt={`Logo concept ${i}`} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <button 
+                onClick={() => window.open(url, '_blank')}
+                className="p-2 bg-white text-black rounded-full shadow-lg"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        ))}
+        {isGenerating && (
+          <div className="aspect-square rounded-xl border border-dashed border-app-border flex items-center justify-center bg-app-bg/50 animate-pulse">
+            <Loader2 className="w-8 h-8 text-app-text-muted animate-spin" />
+          </div>
+        )}
+        {logos.length === 0 && !isGenerating && (
+          <div className="col-span-2 py-12 text-center text-app-text-muted italic text-xs border border-dashed border-app-border rounded-xl">
+            اضغط على "ابتكار شعار" للبدء في تصميم الهوية البصرية
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+const MiniTable = ({ title, icon: Icon, data, type, onStockClick }: { 
+  title: string, 
+  icon: any, 
+  data: any[], 
+  type: 'price' | 'liquidity' | 'wave', 
+  onStockClick: (stock: any) => void 
+}) => (
+  <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex flex-col h-[420px] shadow-sm dark:shadow-none">
+    <div className="p-4 border-b border-app-border bg-app-surface/50 flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-lg ${title.includes('ارتفاع') || title.includes('دخول') || title.includes('موجات') ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
+          <Icon className={`w-4 h-4 ${title.includes('ارتفاع') || title.includes('دخول') || title.includes('موجات') ? 'text-emerald-500' : 'text-rose-500'}`} />
+        </div>
+        <h3 className="text-sm font-bold tracking-tight">{title}</h3>
+      </div>
+      <span className="text-[10px] text-app-text-muted font-mono uppercase">Top 10</span>
+    </div>
+    <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <table className="w-full text-right text-xs">
+        <thead className="sticky top-0 bg-app-surface/90 backdrop-blur-sm text-app-text-muted h-9 border-b border-app-border">
+          <tr>
+            <th className="px-4 font-semibold">الشركة</th>
+            <th className="px-4 font-semibold">السعر</th>
+            <th className="px-4 font-semibold">{type === 'price' ? 'التغير' : type === 'liquidity' ? 'السيولة' : 'الموجة'}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-app-border">
+          {data.map((item, i) => (
+            <tr 
+              key={i} 
+              className="hover:bg-app-bg/50 transition-colors h-11 group cursor-pointer"
+              onClick={() => onStockClick(item)}
+            >
+              <td className="px-4">
+                <div className="font-bold text-app-text group-hover:text-emerald-500 transition-colors">{item.companyName || '---'}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-app-text-muted font-mono">{item.symbol}</span>
+                  {item.wave && item.wave !== "غير محدد" && type !== 'wave' && (
+                    <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1 rounded border border-amber-500/20">
+                      {item.wave.split(' ')[1] || item.wave}
+                    </span>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 font-mono text-app-text-muted">{item.price?.toFixed(2) || '---'}</td>
+              <td className={`px-4 font-mono font-bold ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {type === 'wave' ? (
+                  <span className="text-[10px] text-amber-500 font-medium text-left block">{item.wave}</span>
+                ) : type === 'price' ? (
+                  <span className="flex items-center justify-end gap-1">
+                    {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-end gap-1">
+                    <RefreshCw className="w-3 h-3 opacity-50" />
+                    {item.volumeRatio?.toFixed(1)}x
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr>
+              <td colSpan={3} className="p-12 text-center">
+                <Loader2 className="w-5 h-5 text-app-text-muted animate-spin mx-auto mb-2" />
+                <div className="text-app-text-muted italic text-xs">جاري تحليل البيانات...</div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: { 
+  stock: StockStats, 
+  onClose: () => void,
+  watchlist: string[],
+  onToggleWatchlist: (symbol: string) => void
+}) => {
+  const [activeTab, setActiveTab] = useState<'analysis' | 'news' | 'risk' | 'alerts'>('analysis');
+  const [targetPrice, setTargetPrice] = useState<string>('');
+  const [targetRsi, setTargetRsi] = useState<string>('');
+  const [isSettingAlert, setIsSettingAlert] = useState(false);
+  const [alertStatus, setAlertStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  // AI Analyst States
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+
+  // News States
+  const [news, setNews] = useState<any[]>([]);
+  const [loadingNews, setLoadingNews] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+
+  // Risk Calculator States
+  const [capital, setCapital] = useState<string>('100000');
+  const [riskPercent, setRiskPercent] = useState<string>('1');
+  const [stopLossInput, setStopLossInput] = useState<string>((stock.price * 0.97).toFixed(2));
+
+  const handleAIAnalysis = async () => {
+    setIsAnalyzing(true);
+    try {
+      const response = await fetch('/api/ai-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: stock.symbol,
+          companyName: stock.companyName,
+          price: stock.price,
+          change: stock.change,
+          rsi: stock.rsi,
+          wave: stock.wave,
+          macd: stock.macd,
+          bb: stock.bb,
+          atr: (stock as any).atr,
+          stochRsi: (stock as any).stochRsi
+        })
+      });
+      const data = await response.json();
+      setAiAnalysis(data.analysis || data.error || "فشل في الحصول على تحليل.");
+    } catch (error) {
+      console.error("AI Analysis Error:", error);
+      setAiAnalysis("حدث خطأ أثناء الاتصال بالخادم لجلب التحليل.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const fetchNews = async () => {
+    if (news.length > 0) return;
+    setLoadingNews(true);
+    setNewsError(null);
+    try {
+      const response = await fetch('/api/ai-news', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: stock.symbol, companyName: stock.companyName })
+      });
+      const data = await response.json();
+      if (data.success && Array.isArray(data.news)) {
+        setNews(data.news);
+      } else {
+        setNewsError(data.error || "فشل جلب الأخبار.");
+      }
+    } catch (error) {
+      console.error("News Fetch Error:", error);
+      setNewsError("فشل الاتصال بالخادم لجلب الأخبار.");
+    } finally {
+      setLoadingNews(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'news') {
+      fetchNews();
+    }
+  }, [activeTab]);
+
+  // Calculations for Risk Management
+  const calcRisk = () => {
+    const cap = parseFloat(capital) || 0;
+    const riskP = parseFloat(riskPercent) || 0;
+    const entry = stock.price;
+    const sl = parseFloat(stopLossInput) || 0;
+
+    if (cap <= 0 || riskP <= 0 || entry <= sl || sl <= 0) return null;
+
+    const amountToRisk = cap * (riskP / 100);
+    const riskPerShare = entry - sl;
+    const shares = Math.floor(amountToRisk / riskPerShare);
+    const totalValue = shares * entry;
+
+    return {
+      shares,
+      totalValue,
+      amountToRisk,
+      riskPerShare
+    };
+  };
+
+  const riskResult = calcRisk();
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setLoadingHistory(true);
+      setHistoryError(null);
+      try {
+        const res = await fetch(`/api/history/${stock.symbol}`);
+        const data = await res.json();
+        if (data.success && data.history && data.history.length > 0) {
+          setHistory(data.history);
+        } else {
+          setHistoryError(data.error || 'لا توجد بيانات متاحة لهذا السهم حالياً');
+        }
+      } catch (e) {
+        console.error('Failed to fetch history', e);
+        setHistoryError('فشل الاتصال بالخادم لجلب البيانات');
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    fetchHistory();
+  }, [stock.symbol]);
+
+  const handleSetAlert = async () => {
+    if (!targetPrice && !targetRsi) {
+      setAlertStatus({ type: 'error', message: 'يرجى تحديد سعر أو RSI مستهدف' });
+      return;
+    }
+
+    setIsSettingAlert(true);
+    try {
+      const response = await fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: stock.symbol,
+          targetPrice: targetPrice || undefined,
+          targetRsi: targetRsi || undefined
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAlertStatus({ type: 'success', message: '✅ تم ضبط التنبيه بنجاح' });
+        setTargetPrice('');
+        setTargetRsi('');
+      } else {
+        setAlertStatus({ type: 'error', message: '❌ فشل ضبط التنبيه' });
+      }
+    } catch (error) {
+      setAlertStatus({ type: 'error', message: '❌ خطأ في الاتصال' });
+    } finally {
+      setIsSettingAlert(false);
+      setTimeout(() => setAlertStatus({ type: null, message: '' }), 3000);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.9, opacity: 0, y: 20 }}
+          className="w-full max-w-lg bg-app-surface border border-app-border rounded-3xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-6 border-b border-app-border flex items-center justify-between bg-app-surface/50">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => onToggleWatchlist(stock.symbol)}
+                className={`p-2 rounded-xl transition-all ${
+                  watchlist.includes(stock.symbol) 
+                    ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' 
+                    : 'bg-app-bg text-app-text-muted border border-app-border hover:border-app-text-muted/30'
+                }`}
+                title={watchlist.includes(stock.symbol) ? "إزالة من قائمتي" : "إضافة إلى قائمتي"}
+              >
+                <Star className={`w-5 h-5 ${watchlist.includes(stock.symbol) ? 'fill-amber-500' : ''}`} />
+              </button>
+              <div>
+                <h2 className="text-xl font-bold text-app-text">{stock.companyName}</h2>
+                <p className="text-sm text-app-text-muted font-mono">{stock.symbol}</p>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="p-2 hover:bg-app-bg rounded-full transition-colors"
+            >
+              <AlertCircle className="w-6 h-6 text-app-text-muted rotate-45" />
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            {/* Tabs Navigation */}
+            <div className="px-6 pt-4 flex items-center gap-2 border-b border-app-border sticky top-0 bg-app-surface z-10">
+              <button 
+                onClick={() => setActiveTab('analysis')}
+                className={`pb-3 px-2 text-xs font-bold transition-all relative ${activeTab === 'analysis' ? 'text-emerald-500' : 'text-app-text-muted hover:text-app-text'}`}
+              >
+                التحليل الفني
+                {activeTab === 'analysis' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500 rounded-full" />}
+              </button>
+              <button 
+                onClick={() => setActiveTab('news')}
+                className={`pb-3 px-2 text-xs font-bold transition-all relative ${activeTab === 'news' ? 'text-blue-500' : 'text-app-text-muted hover:text-app-text'}`}
+              >
+                الأخبار والتقارير
+                {activeTab === 'news' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full" />}
+              </button>
+              <button 
+                onClick={() => setActiveTab('risk')}
+                className={`pb-3 px-2 text-xs font-bold transition-all relative ${activeTab === 'risk' ? 'text-amber-500' : 'text-app-text-muted hover:text-app-text'}`}
+              >
+                إدارة المخاطر
+                {activeTab === 'risk' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 rounded-full" />}
+              </button>
+              <button 
+                onClick={() => setActiveTab('alerts')}
+                className={`pb-3 px-2 text-xs font-bold transition-all relative ${activeTab === 'alerts' ? 'text-purple-500' : 'text-app-text-muted hover:text-app-text'}`}
+              >
+                التنبيهات
+                {activeTab === 'alerts' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500 rounded-full" />}
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {activeTab === 'analysis' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-app-bg/50 rounded-2xl border border-app-border">
+                      <p className="text-xs text-app-text-muted mb-1">السعر الحالي</p>
+                      <p className="text-2xl font-bold text-app-text">{stock.price.toFixed(2)}</p>
+                    </div>
+                    <div className="p-4 bg-app-bg/50 rounded-2xl border border-app-border">
+                      <p className="text-xs text-app-text-muted mb-1">التغيير</p>
+                      <p className={`text-2xl font-bold ${stock.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-emerald-500" />
+                      الرسم البياني والمؤشرات
+                    </h3>
+                    
+                    <div className="h-[300px] min-h-[300px] w-full bg-app-bg/20 rounded-2xl border border-app-border p-4 relative">
+                      {loadingHistory ? (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 text-app-text-muted animate-spin" />
+                        </div>
+                      ) : historyError ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-app-text-muted text-xs text-center px-4">
+                          <AlertCircle className="w-8 h-8 mb-2 opacity-20" />
+                          <p>{historyError}</p>
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={history}>
+                            <defs>
+                              <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
+                            <XAxis 
+                              dataKey="time" 
+                              stroke="var(--color-app-text-muted)" 
+                              fontSize={10} 
+                              tickLine={false} 
+                              axisLine={false}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis 
+                              stroke="var(--color-app-text-muted)" 
+                              fontSize={10} 
+                              tickLine={false} 
+                              axisLine={false} 
+                              domain={['auto', 'auto']}
+                              orientation="right"
+                            />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '12px', color: 'var(--color-app-text)' }}
+                              itemStyle={{ color: 'var(--color-app-text)' }}
+                            />
+                            <Area 
+                              type="monotone" 
+                              dataKey="price" 
+                              stroke="#10b981" 
+                              fillOpacity={1} 
+                              fill="url(#colorPrice)" 
+                              strokeWidth={2}
+                            />
+                            <Line 
+                              type="monotone" 
+                              dataKey="bbUpper" 
+                              stroke="#3b82f6" 
+                              strokeDasharray="5 5" 
+                              dot={false} 
+                              strokeWidth={1}
+                              opacity={0.5}
+                            />
+                            <Line 
+                              type="monotone" 
+                              dataKey="bbLower" 
+                              stroke="#3b82f6" 
+                              strokeDasharray="5 5" 
+                              dot={false} 
+                              strokeWidth={1}
+                              opacity={0.5}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+
+                    {/* MACD Chart */}
+                    <div className="h-[150px] min-h-[150px] w-full bg-app-bg/20 rounded-2xl border border-app-border p-4 relative">
+                      {loadingHistory ? (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 text-app-text-muted animate-spin" />
+                        </div>
+                      ) : historyError ? (
+                        <div className="absolute inset-0 flex items-center justify-center text-app-text-muted text-[10px]">
+                          لا تتوفر بيانات MACD
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={history}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
+                            <XAxis dataKey="time" hide />
+                            <YAxis hide domain={['auto', 'auto']} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '12px', color: 'var(--color-app-text)' }}
+                              itemStyle={{ color: 'var(--color-app-text)' }}
+                            />
+                            <Bar dataKey="histogram">
+                              {history.map((entry, index) => (
+                                <rect 
+                                  key={`cell-${index}`} 
+                                  fill={entry.histogram >= 0 ? '#10b981' : '#ef4444'} 
+                                  opacity={0.8}
+                                />
+                              ))}
+                            </Bar>
+                            <Line type="monotone" dataKey="macd" stroke="#3b82f6" dot={false} strokeWidth={1} />
+                            <Line type="monotone" dataKey="signal" stroke="#f59e0b" dot={false} strokeWidth={1} />
+                            <ReferenceLine y={0} stroke="var(--color-app-text-muted)" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-500" />
+                      المؤشرات الفنية المتقدمة
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 gap-4">
+                      {/* MACD */}
+                      <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-app-text">MACD (12, 26, 9)</span>
+                          <span className={`text-xs font-mono ${stock.macd?.histogram && stock.macd.histogram >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {stock.macd?.histogram && stock.macd.histogram >= 0 ? 'إيجابي' : 'سلبي'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-[10px] text-app-text-muted">MACD</p>
+                            <p className="text-sm font-mono text-app-text">{stock.macd?.macd || '---'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-app-text-muted">Signal</p>
+                            <p className="text-sm font-mono text-app-text">{stock.macd?.signal || '---'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-app-text-muted">Hist</p>
+                            <p className={`text-sm font-mono ${stock.macd?.histogram && stock.macd.histogram >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {stock.macd?.histogram || '---'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bollinger Bands */}
+                      <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-app-text">Bollinger Bands (20, 2)</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-[10px] text-app-text-muted">Upper</p>
+                            <p className="text-sm font-mono text-app-text">{stock.bb?.upper || '---'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-app-text-muted">Middle</p>
+                            <p className="text-sm font-mono text-app-text">{stock.bb?.middle || '---'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-app-text-muted">Lower</p>
+                            <p className="text-sm font-mono text-app-text">{stock.bb?.lower || '---'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* RSI & Wave & ATR & StochRSI */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                          <p className="text-[10px] text-app-text-muted mb-1">RSI (14)</p>
+                          <p className={`text-lg font-bold ${stock.rsi > 70 ? 'text-rose-500' : stock.rsi < 30 ? 'text-emerald-500' : 'text-app-text'}`}>
+                            {stock.rsi.toFixed(1)}
+                          </p>
+                          <p className="text-[9px] text-app-text-muted mt-0.5">
+                            {stock.rsi > 70 ? 'تشبع شرائي' : stock.rsi < 30 ? 'تشبع بيعي' : 'محايد'}
+                          </p>
+                        </div>
+                        <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                          <p className="text-[10px] text-app-text-muted mb-1">Stoch RSI</p>
+                          {stock.stochRsi ? (
+                            <>
+                              <p className={`text-lg font-bold ${stock.stochRsi.k > 80 ? 'text-rose-500' : stock.stochRsi.k < 20 ? 'text-emerald-500' : 'text-app-text'}`}>
+                                K: {stock.stochRsi.k.toFixed(1)}
+                              </p>
+                              <p className="text-[9px] text-app-text-muted">D: {stock.stochRsi.d.toFixed(1)}</p>
+                            </>
+                          ) : <p className="text-sm text-app-text-muted">---</p>}
+                        </div>
+                        {stock.atr && stock.atr > 0 && (
+                          <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                            <p className="text-[10px] text-app-text-muted mb-1">ATR (14)</p>
+                            <p className="text-lg font-bold text-blue-400">{stock.atr.toFixed(3)}</p>
+                            <p className="text-[9px] text-app-text-muted">وقف مقترح: {(stock.price - stock.atr * 1.5).toFixed(2)}</p>
+                          </div>
+                        )}
+                        <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border col-span-1">
+                          <p className="text-[10px] text-app-text-muted mb-1">موجة إليوت</p>
+                          <p className="text-xs font-bold text-amber-500 truncate">{stock.wave || 'غير محدد'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI Analyst Section */}
+                  <div className="space-y-4 pt-4 border-t border-app-border">
+                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                      <Brain className="w-4 h-4 text-purple-500" />
+                      المحلل الذكي (Gemini AI)
+                    </h3>
+                    
+                    {!aiAnalysis && !isAnalyzing ? (
+                      <button 
+                        onClick={handleAIAnalysis}
+                        className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-purple-900/20 flex items-center justify-center gap-3 group"
+                      >
+                        <Brain className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        اطلب تحليل الذكاء الاصطناعي للسهم
+                      </button>
+                    ) : (
+                      <div className="p-5 bg-app-surface/40 rounded-2xl border border-purple-500/30 relative overflow-hidden">
+                        {isAnalyzing ? (
+                          <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                            <p className="text-sm text-app-text-muted animate-pulse">جاري تحليل البيانات العميقة للسهم...</p>
+                          </div>
+                        ) : (
+                          <div className="prose prose-invert prose-sm max-w-none text-app-text leading-relaxed dark:prose-invert">
+                            <Markdown>{aiAnalysis}</Markdown>
+                            <button 
+                              onClick={() => setAiAnalysis(null)}
+                              className="mt-4 text-[10px] text-app-text-muted hover:text-app-text underline"
+                            >
+                              تحديث التحليل
+                            </button>
+                          </div>
+                        )}
+                        <div className="absolute top-0 right-0 p-2 opacity-10">
+                          <Brain className="w-12 h-12 text-purple-500" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'news' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                      <Newspaper className="w-4 h-4 text-blue-500" />
+                      آخر الأخبار والتقارير
+                    </h3>
+                    <button 
+                      onClick={() => { setNews([]); fetchNews(); }}
+                      className="text-[10px] font-bold text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${loadingNews ? 'animate-spin' : ''}`} />
+                      تحديث
+                    </button>
+                  </div>
+
+                  {loadingNews ? (
+                    <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                      <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                      <p className="text-sm text-app-text-muted animate-pulse">جاري البحث عن أحدث الأخبار...</p>
+                    </div>
+                  ) : newsError ? (
+                    <div className="p-6 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-center">
+                      <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
+                      <p className="text-sm text-rose-500">{newsError}</p>
+                      <button 
+                        onClick={fetchNews}
+                        className="mt-4 text-xs font-bold text-blue-500 underline"
+                      >
+                        إعادة المحاولة
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {news.map((item, i) => (
+                        <motion.div 
+                          key={i} 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.1 }}
+                          className="bg-app-surface/40 rounded-2xl border border-app-border overflow-hidden hover:border-blue-500/30 transition-all group flex flex-col"
+                        >
+                          {item.imageUrl && (
+                            <div className="w-full h-40 overflow-hidden shrink-0">
+                              <img 
+                                src={item.imageUrl} 
+                                alt={item.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                referrerPolicy="no-referrer"
+                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                              />
+                            </div>
+                          )}
+                          <div className="p-5 flex flex-col flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider bg-blue-500/10 px-2 py-0.5 rounded">
+                                {item.source}
+                              </span>
+                              <span className="text-[10px] text-app-text-muted font-mono">
+                                {item.date}
+                              </span>
+                            </div>
+                            <h4 className="text-base font-bold text-app-text mb-3 group-hover:text-blue-400 transition-colors">
+                              {item.title}
+                            </h4>
+                            <div className="text-sm text-app-text-muted leading-relaxed mb-4 line-clamp-3">
+                              {item.summary}
+                            </div>
+                            <div className="mt-auto flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-[10px] text-emerald-500 font-bold">
+                                <Brain className="w-3 h-3" />
+                                AI Summary
+                              </div>
+                              <a 
+                                href={item.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-xs font-bold text-app-text hover:text-blue-500 transition-colors"
+                              >
+                                اقرأ المزيد
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                      {news.length === 0 && !loadingNews && (
+                        <div className="text-center py-12 bg-app-surface/20 rounded-2xl border border-dashed border-app-border">
+                          <Newspaper className="w-8 h-8 text-app-text-muted mx-auto mb-3 opacity-20" />
+                          <p className="text-app-text-muted italic">لا توجد أخبار حديثة متاحة حالياً.</p>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-app-text-muted text-center italic">
+                        تم استخراج وتلخيص هذه الأخبار باستخدام الذكاء الاصطناعي من مصادر متعددة.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'risk' && (
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                      <Calculator className="w-4 h-4 text-emerald-500" />
+                      حاسبة إدارة المخاطر
+                    </h3>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-app-text-muted uppercase font-bold flex items-center gap-1">
+                          <Wallet className="w-3 h-3" /> رأس المال
+                        </label>
+                        <input 
+                          type="number" 
+                          value={capital}
+                          onChange={(e) => setCapital(e.target.value)}
+                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-app-text-muted uppercase font-bold flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3" /> نسبة المخاطرة %
+                        </label>
+                        <input 
+                          type="number" 
+                          value={riskPercent}
+                          onChange={(e) => setRiskPercent(e.target.value)}
+                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-app-text-muted uppercase font-bold flex items-center gap-1">
+                          <Target className="w-3 h-3" /> وقف الخسارة
+                        </label>
+                        <input 
+                          type="number" 
+                          value={stopLossInput}
+                          onChange={(e) => setStopLossInput(e.target.value)}
+                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                        />
+                      </div>
+                    </div>
+
+                    {riskResult ? (
+                      <div className="grid grid-cols-1 gap-3">
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                          <p className="text-[10px] text-emerald-500/70 mb-1">عدد الأسهم المقترح</p>
+                          <p className="text-2xl font-bold text-emerald-500">{riskResult.shares.toLocaleString()}</p>
+                        </div>
+                        <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                          <p className="text-[10px] text-blue-500/70 mb-1">قيمة الصفقة الإجمالية</p>
+                          <p className="text-2xl font-bold text-blue-500">{riskResult.totalValue.toLocaleString()} ر.س</p>
+                        </div>
+                        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                          <div className="flex justify-between items-center">
+                            <p className="text-[10px] text-rose-500/70">المبلغ المخاطر به (في حال ضرب الوقف)</p>
+                            <p className="text-lg font-bold text-rose-500">{riskResult.amountToRisk.toLocaleString()} ر.س</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-app-bg/50 rounded-xl text-center text-xs text-app-text-muted">
+                        يرجى إدخال قيم صحيحة (وقف الخسارة يجب أن يكون أقل من سعر الدخول)
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'alerts' && (
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-purple-500" />
+                      ضبط تنبيه مخصص
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-app-text-muted uppercase font-bold">السعر المستهدف</label>
+                        <input 
+                          type="number" 
+                          value={targetPrice}
+                          onChange={(e) => setTargetPrice(e.target.value)}
+                          placeholder="مثال: 150.50"
+                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-app-text-muted uppercase font-bold">RSI المستهدف</label>
+                        <input 
+                          type="number" 
+                          value={targetRsi}
+                          onChange={(e) => setTargetRsi(e.target.value)}
+                          placeholder="مثال: 75"
+                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                        />
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={handleSetAlert}
+                      disabled={isSettingAlert}
+                      className="w-full py-4 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20"
+                    >
+                      {isSettingAlert ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                      تفعيل التنبيه الذكي
+                    </button>
+
+                    <AnimatePresence>
+                      {alertStatus.type && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className={`text-xs text-center p-3 rounded-xl ${
+                            alertStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                          }`}
+                        >
+                          {alertStatus.message}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="p-6 bg-app-surface/50 border-t border-app-border">
+            <button 
+              onClick={onClose}
+              className="w-full py-3 bg-app-text text-app-bg font-bold rounded-xl hover:opacity-90 transition-colors"
+            >
+              إغلاق
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
+const FeedbackModal = ({ onClose, user }: { onClose: () => void, user: FirebaseUser | null }) => {
+  const [name, setName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [type, setType] = useState('تحسين');
+  const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message) return;
+
+    setIsSending(true);
+    try {
+      // 1. Send to API (for Telegram)
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, type, message })
+      });
+
+      // 2. Save to Firestore
+      const feedbackData = {
+        userId: user?.uid || null,
+        name,
+        email,
+        type,
+        message,
+        createdAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, 'feedback'), feedbackData);
+
+      setStatus({ type: 'success', message: '✅ شكراً لك! تم استلام ملاحظتك بنجاح.' });
+      setTimeout(onClose, 2000);
+    } catch (error) {
+      console.error('Feedback error:', error);
+      setStatus({ type: 'error', message: '❌ فشل الإرسال، يرجى المحاولة لاحقاً.' });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.9, opacity: 0, y: 20 }}
+          className="bg-app-surface border border-app-border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-6 border-b border-app-border flex items-center justify-between bg-app-surface/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/10 rounded-xl">
+                <MessageSquare className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-app-text">شاركنا رأيك</h2>
+                <p className="text-[10px] text-app-text-muted">نحن في المرحلة التجريبية ويهمنا رأيك</p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-app-text-muted uppercase font-bold">الاسم (اختياري)</label>
+                <input 
+                  type="text" 
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-app-text"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-app-text-muted uppercase font-bold">نوع الملاحظة</label>
+                <select 
+                  value={type}
+                  onChange={e => setType(e.target.value)}
+                  className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-app-text"
+                >
+                  <option value="تحسين">اقتراح تحسين</option>
+                  <option value="خطأ">إبلاغ عن خطأ</option>
+                  <option value="ميزة">طلب ميزة جديدة</option>
+                  <option value="أخرى">أخرى</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-app-text-muted uppercase font-bold">الإيميل (اختياري)</label>
+              <input 
+                type="email" 
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-left text-app-text"
+                dir="ltr"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-app-text-muted uppercase font-bold">رسالتك</label>
+              <textarea 
+                required
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                rows={4}
+                className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors resize-none text-app-text"
+                placeholder="اكتب ملاحظاتك هنا..."
+              />
+            </div>
+
+            {status.type && (
+              <div className={`text-xs text-center p-2 rounded-lg ${
+                status.type === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+              }`}>
+                {status.message}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button 
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-3 bg-app-bg text-app-text-muted font-bold rounded-xl hover:bg-app-surface transition-colors"
+              >
+                إلغاء
+              </button>
+              <button 
+                type="submit"
+                disabled={isSending || !message}
+                className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-500 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
+              >
+                {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                إرسال الملاحظة
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
+const MarginTrading = ({ 
+  user, 
+  marginAccount, 
+  marginPositions, 
+  tickerData, 
+  onClosePosition 
+}: { 
+  user: FirebaseUser | null, 
+  marginAccount: MarginAccount | null, 
+  marginPositions: MarginPosition[], 
+  tickerData: StockStats[],
+  onClosePosition: (pos: MarginPosition) => void
+}) => {
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center space-y-4">
+        <Wallet className="w-12 h-12 text-app-text-muted opacity-20" />
+        <h3 className="text-xl font-bold text-app-text">يرجى تسجيل الدخول</h3>
+        <p className="text-app-text-muted max-w-xs mx-auto">يجب تسجيل الدخول للوصول إلى ميزات التداول بالهامش.</p>
+        <button 
+          onClick={() => loginWithGoogle()}
+          className="px-6 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-500 transition-colors"
+        >
+          تسجيل الدخول
+        </button>
+      </div>
+    );
+  }
+
+  if (!marginAccount) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+      </div>
+    );
+  }
+
+  const marginHealth = marginAccount.marginUsed > 0 
+    ? (marginAccount.equity / marginAccount.marginUsed) * 100 
+    : 100;
+  
+  const isMarginCall = marginAccount.equity < marginAccount.maintenanceMargin;
+
+  return (
+    <div className="space-y-6 p-6" dir="rtl">
+      {/* Account Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="p-4 bg-app-bg border border-app-border rounded-2xl">
+          <div className="text-[10px] text-app-text-muted uppercase mb-1">الرصيد النقدي</div>
+          <div className="text-xl font-bold text-app-text">{marginAccount.balance.toLocaleString()} ر.س</div>
+        </div>
+        <div className="p-4 bg-app-bg border border-app-border rounded-2xl">
+          <div className="text-[10px] text-app-text-muted uppercase mb-1">إجمالي الملكية</div>
+          <div className="text-xl font-bold text-emerald-500">{marginAccount.equity.toLocaleString()} ر.س</div>
+        </div>
+        <div className="p-4 bg-app-bg border border-app-border rounded-2xl">
+          <div className="text-[10px] text-app-text-muted uppercase mb-1">الهامش المستخدم</div>
+          <div className="text-xl font-bold text-rose-500">{marginAccount.marginUsed.toLocaleString()} ر.س</div>
+        </div>
+        <div className={`p-4 border rounded-2xl transition-colors ${isMarginCall ? 'bg-rose-500/10 border-rose-500/50' : 'bg-app-bg border-app-border'}`}>
+          <div className="text-[10px] text-app-text-muted uppercase mb-1">صحة الهامش</div>
+          <div className={`text-xl font-bold ${isMarginCall ? 'text-rose-500 animate-pulse' : 'text-emerald-500'}`}>
+            {marginHealth.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+
+      {isMarginCall && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 bg-rose-500/20 border border-rose-500/50 rounded-2xl flex items-center gap-4"
+        >
+          <AlertCircle className="w-6 h-6 text-rose-500" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-rose-500">تنبيه نداء الهامش (Margin Call)!</div>
+            <div className="text-xs text-rose-500/80">لقد انخفضت ملكيتك عن الحد الأدنى المطلوب. يرجى إيداع أموال أو إغلاق بعض المراكز فوراً.</div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Open Positions */}
+      <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden shadow-sm">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between">
+          <h3 className="font-bold text-app-text flex items-center gap-2">
+            <Activity className="w-4 h-4 text-emerald-500" />
+            المراكز المفتوحة ({marginPositions.length})
+          </h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-right">
+            <thead className="bg-app-bg/50 text-[10px] text-app-text-muted uppercase">
+              <tr>
+                <th className="px-6 py-3">الشركة</th>
+                <th className="px-6 py-3">الكمية</th>
+                <th className="px-6 py-3">سعر الدخول</th>
+                <th className="px-6 py-3">السعر الحالي</th>
+                <th className="px-6 py-3">الربح/الخسارة</th>
+                <th className="px-6 py-3">الإجراء</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-app-border">
+              {marginPositions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-app-text-muted text-sm">لا توجد مراكز مفتوحة حالياً.</td>
+                </tr>
+              ) : (
+                marginPositions.map(pos => {
+                  const stock = tickerData.find(s => s.symbol === pos.symbol);
+                  const currentPrice = stock?.price || pos.entryPrice;
+                  const pnl = (currentPrice - pos.entryPrice) * pos.quantity;
+                  const pnlPercent = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
+
+                  return (
+                    <tr key={pos.id} className="hover:bg-app-bg/30 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-app-text">{SAUDI_STOCKS[pos.symbol.split('.')[0]] || pos.symbol}</div>
+                        <div className="text-[10px] text-app-text-muted font-mono">{pos.symbol}</div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-app-text">{pos.quantity}</td>
+                      <td className="px-6 py-4 font-mono text-app-text">{pos.entryPrice.toFixed(2)}</td>
+                      <td className="px-6 py-4 font-mono text-app-text">{currentPrice.toFixed(2)}</td>
+                      <td className={`px-6 py-4 font-mono font-bold ${pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} ({pnlPercent.toFixed(2)}%)
+                      </td>
+                      <td className="px-6 py-4">
+                        <button 
+                          onClick={() => onClosePosition(pos)}
+                          className="px-3 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[10px] font-bold rounded-lg border border-rose-500/20 transition-all"
+                        >
+                          إغلاق المركز
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
+  const [selectedStock, setSelectedStock] = useState<StockStats | null>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    return saved ? saved === 'dark' : true; // Default to dark
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const [activeTab, setActiveTab] = useState<'active' | 'watchlist' | 'all' | 'margin'>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [marginAccount, setMarginAccount] = useState<MarginAccount | null>(null);
+  const [marginPositions, setMarginPositions] = useState<MarginPosition[]>([]);
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      setIsAuthReady(true);
+      
+      if (firebaseUser) {
+        // Check/Create User Profile
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        try {
+          const userDoc = await getDoc(userRef);
+          if (!userDoc.exists()) {
+            await setDoc(userRef, {
+              uid: firebaseUser.uid,
+              displayName: firebaseUser.displayName,
+              email: firebaseUser.email,
+              photoURL: firebaseUser.photoURL,
+              role: 'user',
+              createdAt: serverTimestamp()
+            });
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Watchlist Sync
+  useEffect(() => {
+    if (!user) {
+      // Load from local storage if not logged in
+      const saved = localStorage.getItem('saudi_stock_watchlist');
+      setWatchlist(saved ? JSON.parse(saved) : []);
+      return;
+    }
+
+    // Sync from Firestore if logged in
+    const q = query(collection(db, 'watchlists'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const symbols = snapshot.docs.map(doc => doc.data().symbol);
+      setWatchlist(symbols);
+      localStorage.setItem('saudi_stock_watchlist', JSON.stringify(symbols));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'watchlists');
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Margin Account Sync
+  useEffect(() => {
+    if (!user) {
+      setMarginAccount(null);
+      return;
+    }
+
+    const docRef = doc(db, 'margin_accounts', user.uid);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setMarginAccount(docSnap.data() as MarginAccount);
+      } else {
+        // Initialize account if not exists
+        setDoc(docRef, {
+          userId: user.uid,
+          balance: 100000, // Starting with 100k virtual cash
+          equity: 100000,
+          marginUsed: 0,
+          maintenanceMargin: 0,
+          updatedAt: serverTimestamp()
+        });
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `margin_accounts/${user.uid}`);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Margin Positions Sync
+  useEffect(() => {
+    if (!user) {
+      setMarginPositions([]);
+      return;
+    }
+
+    const q = query(collection(db, 'margin_positions'), where('userId', '==', user.uid), where('status', '==', 'open'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const positions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarginPosition));
+      setMarginPositions(positions);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'margin_positions');
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Update Margin Equity when status or positions change
+  useEffect(() => {
+    if (!user || !marginAccount || !status) return;
+
+    let totalPositionValue = 0;
+    marginPositions.forEach(pos => {
+      const stock = status.tickerData.find(s => s.symbol === pos.symbol);
+      const currentPrice = stock?.price || pos.entryPrice;
+      totalPositionValue += currentPrice * pos.quantity;
+    });
+
+    const newEquity = marginAccount.balance + totalPositionValue - marginAccount.marginUsed;
+    const maintenanceMargin = totalPositionValue * 0.25; // 25% maintenance
+
+    // Only update if significant change to avoid loops
+    if (Math.abs(newEquity - marginAccount.equity) > 0.1 || Math.abs(maintenanceMargin - marginAccount.maintenanceMargin) > 0.1) {
+      const docRef = doc(db, 'margin_accounts', user.uid);
+      updateDoc(docRef, {
+        equity: newEquity,
+        maintenanceMargin: maintenanceMargin,
+        updatedAt: serverTimestamp()
+      });
+    }
+  }, [status, marginPositions, user]);
+
+  const toggleWatchlist = async (symbol: string) => {
+    if (!user) {
+      // Local only if not logged in
+      setWatchlist(prev => {
+        const next = prev.includes(symbol) 
+          ? prev.filter(s => s !== symbol) 
+          : [...prev, symbol];
+        localStorage.setItem('saudi_stock_watchlist', JSON.stringify(next));
+        return next;
+      });
+      return;
+    }
+
+    // Firestore sync if logged in
+    try {
+      if (watchlist.includes(symbol)) {
+        // Remove
+        const q = query(collection(db, 'watchlists'), where('userId', '==', user.uid), where('symbol', '==', symbol));
+        const snapshot = await getDocs(q);
+        for (const doc of snapshot.docs) {
+          await deleteDoc(doc.ref);
+        }
+      } else {
+        // Add
+        await addDoc(collection(db, 'watchlists'), {
+          userId: user.uid,
+          symbol,
+          addedAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'watchlists');
+    }
+  };
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      setStatus(data);
+      setFetchError(null);
+    } catch (e: any) {
+      console.error('Failed to fetch status', e);
+      setFetchError(e.message || 'خطأ في الاتصال بالخادم');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testTelegram = async () => {
+    setIsTestingTelegram(true);
+    setTelegramStatus({ type: null, message: '' });
+    try {
+      const response = await fetch('/api/test-telegram', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        setTelegramStatus({ 
+          type: 'success', 
+          message: `✅ تم الإرسال عبر @${data.message.split('@')[1]} إلى ID: ${data.chatId}` 
+        });
+      } else {
+        const errorMsg = data.error || 'خطأ غير معروف';
+        setTelegramStatus({ 
+          type: 'error', 
+          message: errorMsg.includes('404') 
+            ? '❌ التوكن غير صحيح (404). تأكد من نسخه كاملاً من BotFather.' 
+            : `❌ فشل الإرسال: ${errorMsg}` 
+        });
+      }
+    } catch (error) {
+      setTelegramStatus({ type: 'error', message: '❌ خطأ في الاتصال بالخادم' });
+    } finally {
+      setIsTestingTelegram(false);
+      // Clear status after 5 seconds
+      setTimeout(() => setTelegramStatus({ type: null, message: '' }), 5000);
+    }
+  };
+
+  const startScan = async () => {
+    try {
+      const response = await fetch('/api/scan', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        setTelegramStatus({ type: 'success', message: '🚀 بدأ المسح اليدوي للسوق...' });
+        fetchStatus();
+      } else {
+        setTelegramStatus({ type: 'error', message: '⚠️ ' + (data.message || 'خطأ في بدء المسح') });
+      }
+    } catch (error) {
+      setTelegramStatus({ type: 'error', message: '❌ خطأ في الاتصال بالخادم' });
+    } finally {
+      setTimeout(() => setTelegramStatus({ type: null, message: '' }), 5000);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const TradeRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const trade = status?.activeTrades[index];
+    if (!trade) return null;
+    const fullStock = status?.tickerData.find(s => s.symbol === trade.symbol);
+    
+    return (
+      <div 
+        style={style} 
+        className="flex items-center border-b border-app-border hover:bg-app-bg transition-colors px-6 cursor-pointer"
+        onClick={() => fullStock && setSelectedStock(fullStock)}
+      >
+        <div className="flex-[1.5]">
+          <div className="font-bold text-emerald-500">{trade.companyName}</div>
+          <div className="text-[10px] text-app-text-muted font-mono">{trade.symbol}</div>
+        </div>
+        <div className="flex-1 font-mono">{trade.entryPrice.toFixed(2)}</div>
+        <div className="flex-1 font-mono">{trade.rsi.toFixed(1)}</div>
+        <div className="flex-[1.5] text-xs font-medium">
+          {trade.wave && trade.wave !== "غير محدد" ? (
+            <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded border border-amber-500/20">
+              {trade.wave}
+            </span>
+          ) : (
+            <span className="text-app-text-muted italic opacity-50">---</span>
+          )}
+        </div>
+        <div className="flex-1 text-sm text-app-text-muted text-left">
+          {new Date(trade.entryTime).toLocaleTimeString('ar-SA')}
+        </div>
+      </div>
+    );
+  };
+
+  const AlertRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const alert = status?.alerts[index];
+    if (!alert) return null;
+    return (
+      <div style={{ ...style, paddingLeft: 8, paddingRight: 8 }} className="py-1.5">
+        <div className={`p-4 rounded-xl border h-full ${
+          alert.type === 'entry' 
+            ? 'bg-emerald-500/5 border-emerald-500/20' 
+            : 'bg-rose-500/5 border-rose-500/20'
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${
+                alert.type === 'entry' ? 'bg-emerald-500/20' : 'bg-rose-500/20'
+              }`}>
+                {alert.type === 'entry' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-500" />
+                )}
+              </div>
+              <div>
+                <div className="font-bold text-sm">{alert.companyName} ({alert.symbol})</div>
+                <div className="text-xs text-app-text-muted">
+                  {alert.type === 'entry' ? (
+                    <span className="flex items-center gap-2">
+                      إشارة دخول • {alert.price.toFixed(2)}
+                      {alert.wave && <span className="text-amber-500 font-bold">• {alert.wave}</span>}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      إشارة خروج • {alert.price.toFixed(2)}
+                      {alert.profit !== undefined && (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          alert.profit >= 0 
+                            ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' 
+                            : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                        }`}>
+                          الربح: {alert.profit.toFixed(2)}%
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="text-[10px] text-app-text-muted font-mono">
+              {new Date(alert.time).toLocaleTimeString('ar-SA')}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const closeMarginPosition = async (position: MarginPosition) => {
+    if (!user || !marginAccount) return;
+
+    try {
+      const stock = status?.tickerData.find(s => s.symbol === position.symbol);
+      const currentPrice = stock?.price || position.entryPrice;
+      const proceeds = currentPrice * position.quantity;
+      
+      // Update balance
+      await updateDoc(doc(db, 'margin_accounts', user.uid), {
+        balance: marginAccount.balance + proceeds,
+        marginUsed: marginAccount.marginUsed - (position.entryPrice * position.quantity)
+      });
+
+      // Delete position
+      await deleteDoc(doc(db, 'margin_positions', position.id));
+      
+      // Log activity
+      await addDoc(collection(db, 'activities'), {
+        uid: user.uid,
+        type: 'margin_close',
+        symbol: position.symbol,
+        quantity: position.quantity,
+        price: currentPrice,
+        pnl: (currentPrice - position.entryPrice) * position.quantity,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error closing margin position:", error);
+    }
+  };
+
+  const openMarginPosition = async (symbol: string, quantity: number, price: number) => {
+    if (!user || !marginAccount) return;
+
+    const cost = quantity * price;
+    const marginRequirement = cost * 0.5; // 50% initial margin
+
+    if (marginAccount.balance < marginRequirement) {
+      alert("رصيد غير كافٍ لفتح هذا المركز بالهامش.");
+      return;
+    }
+
+    try {
+      // Create position
+      await addDoc(collection(db, 'margin_positions'), {
+        uid: user.uid,
+        symbol,
+        quantity,
+        entryPrice: price,
+        timestamp: new Date().toISOString(),
+        status: 'open'
+      });
+
+      // Update account
+      await updateDoc(doc(db, 'margin_accounts', user.uid), {
+        balance: marginAccount.balance - marginRequirement,
+        marginUsed: marginAccount.marginUsed + cost
+      });
+
+      // Log activity
+      await addDoc(collection(db, 'activities'), {
+        uid: user.uid,
+        type: 'margin_open',
+        symbol,
+        quantity,
+        price,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error opening margin position:", error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-app-bg flex flex-col items-center justify-center transition-colors gap-4">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+        <p className="text-app-text-muted text-sm animate-pulse">جاري الاتصال بالرادار...</p>
+      </div>
+    );
+  }
+
+  if (fetchError && !status) {
+    return (
+      <div className="min-h-screen bg-app-bg flex items-center justify-center p-6 text-center" dir="rtl">
+        <div className="bg-app-surface border border-app-border p-8 rounded-3xl max-w-md w-full space-y-4">
+          <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
+            <AlertCircle className="w-8 h-8 text-rose-500" />
+          </div>
+          <h2 className="text-xl font-bold text-app-text">خطأ في جلب البيانات</h2>
+          <p className="text-app-text-muted text-sm">{fetchError}</p>
+          <button 
+            onClick={() => {
+              setLoading(true);
+              fetchStatus();
+            }}
+            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            حاول مرة أخرى
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!status || (status.tickerData.length === 0 && !status.isScanning)) {
+    return (
+      <div className="min-h-screen bg-app-bg flex items-center justify-center p-6 text-center" dir="rtl">
+        <div className="bg-app-surface border border-app-border p-8 rounded-3xl max-w-md w-full space-y-4">
+          <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto">
+            <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+          </div>
+          <h2 className="text-xl font-bold text-app-text">جاري تهيئة البيانات</h2>
+          <p className="text-app-text-muted text-sm">يقوم الرادار حالياً بجمع بيانات السوق السعودي لأول مرة. قد يستغرق هذا دقيقة واحدة.</p>
+          <div className="w-full bg-app-bg rounded-full h-2 overflow-hidden">
+            <motion.div 
+              className="bg-emerald-500 h-full"
+              initial={{ width: "0%" }}
+              animate={{ width: "100%" }}
+              transition={{ duration: 60, ease: "linear" }}
+            />
+          </div>
+          <button 
+            onClick={() => fetchStatus()}
+            className="w-full py-3 bg-app-bg hover:bg-app-surface text-app-text font-bold rounded-xl border border-app-border transition-all flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            تحديث الحالة
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-app-bg text-app-text font-sans selection:bg-emerald-500/30 transition-colors duration-300" dir="rtl">
+      <TickerTape data={status?.tickerData || []} marketIndex={status?.marketIndex} />
+      
+      {/* TASI Sidebar Widget */}
+      <div className="fixed top-24 left-6 z-40 hidden xl:block">
+        <motion.div 
+          initial={{ x: -100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          className="bg-app-surface/80 backdrop-blur-md border border-app-border p-4 rounded-2xl shadow-xl w-48"
+        >
+          <div className="flex items-center gap-2 mb-3 text-app-text-muted">
+            <TrendingUp className="w-4 h-4" />
+            <span className="text-xs font-bold">المؤشر العام (تاسي)</span>
+          </div>
+          {status?.marketIndex ? (
+            <div className="space-y-1">
+              <div className="text-2xl font-bold font-mono">
+                {status.marketIndex.price.toLocaleString()}
+              </div>
+              <div className={`text-xs font-bold flex items-center gap-1 ${status.marketIndex.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {status.marketIndex.change >= 0 ? '+' : ''}{status.marketIndex.change.toFixed(2)} ({status.marketIndex.changePercent.toFixed(2)}%)
+              </div>
+              <div className="pt-2 mt-2 border-t border-app-border flex justify-between text-[10px] text-app-text-muted">
+                <span>الأعلى: {status.marketIndex.high.toLocaleString()}</span>
+                <span>الأدنى: {status.marketIndex.low.toLocaleString()}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="animate-pulse space-y-2">
+              <div className="h-6 bg-app-bg rounded w-3/4"></div>
+              <div className="h-4 bg-app-bg rounded w-1/2"></div>
+            </div>
+          )}
+        </motion.div>
+      </div>
+
+      {/* Feedback Floating Button */}
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setShowFeedback(true)}
+        className="fixed bottom-6 left-6 z-[60] bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-2xl shadow-2xl shadow-blue-900/40 flex items-center gap-2 group"
+      >
+        <MessageSquare className="w-6 h-6" />
+        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap font-bold text-sm">
+          أرسل ملاحظاتك
+        </span>
+      </motion.button>
+
+      {/* Header */}
+      <header className="border-b border-app-border bg-app-surface/80 backdrop-blur-xl sticky top-0 z-50 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 h-20 sm:h-16 flex flex-col sm:flex-row items-center justify-between gap-4 py-2 sm:py-0">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 rounded-lg">
+                <Radar className="w-6 h-6 text-emerald-500" />
+              </div>
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold tracking-tight">تريندسا trandsa</h1>
+                <span className="text-[9px] text-app-text-muted font-bold uppercase tracking-wider -mt-1">منصة التداول الذكية</span>
+              </div>
+            </div>
+
+            {/* Mobile User Profile */}
+            <div className="sm:hidden">
+              {user ? (
+                <button 
+                  onClick={() => logout()}
+                  className="p-1.5 bg-app-bg hover:bg-app-surface rounded-xl border border-app-border transition-all"
+                >
+                  <img 
+                    src={user.photoURL || ''} 
+                    alt={user.displayName || ''} 
+                    className="w-6 h-6 rounded-lg"
+                    referrerPolicy="no-referrer"
+                  />
+                </button>
+              ) : (
+                <button 
+                  onClick={() => loginWithGoogle()}
+                  className="p-1.5 bg-app-bg hover:bg-app-surface rounded-xl border border-app-border transition-all"
+                >
+                  <User className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4 w-full sm:w-auto justify-center sm:justify-end overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+            {status?.marketIndex && (
+              <div className="flex items-center gap-4 px-3 py-1.5 bg-app-bg/80 border border-emerald-500/30 rounded-xl shadow-lg shadow-emerald-900/10 shrink-0">
+                <div className="flex flex-col">
+                  <div className="text-[9px] text-app-text-muted font-bold uppercase tracking-wider">تاسي (TASI)</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-sm text-app-text">{status.marketIndex.price.toLocaleString()}</span>
+                    <span className={`text-[10px] font-bold flex items-center gap-0.5 ${status.marketIndex.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {status.marketIndex.change >= 0 ? '▲' : '▼'}
+                      {Math.abs(status.marketIndex.changePercent).toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="hidden md:flex gap-3 border-r border-app-border pr-3">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] text-app-text-muted uppercase">السيولة</span>
+                    <span className="text-[10px] font-mono text-app-text">{(status.marketIndex.volume / 1000000).toFixed(1)}M</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={toggleTheme}
+                className="p-2 bg-app-surface hover:bg-app-bg text-app-text-muted rounded-xl border border-app-border transition-all shadow-sm"
+                title={isDarkMode ? "الوضع الفاتح" : "الوضع الداكن"}
+              >
+                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+
+              <a
+                href={status?.telegramBotName ? `https://t.me/${status.telegramBotName}` : "https://t.me/Aboamran2016"}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#0088cc] hover:bg-[#0077b5] text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-blue-900/30 whitespace-nowrap"
+              >
+                <Send className="w-3.5 h-3.5" />
+                قناة التليجرام
+              </a>
+
+              <div className="hidden lg:block">
+                {user && (
+                  <div className="text-left">
+                    <div className="text-xs font-bold text-app-text">{user.displayName}</div>
+                    <div className="text-[10px] text-app-text-muted">{user.email}</div>
+                  </div>
+                )}
+              </div>
+              {user && (
+                <button 
+                  onClick={() => logout()}
+                  className="hidden sm:block p-1.5 bg-app-bg hover:bg-app-surface rounded-xl border border-app-border transition-all group relative"
+                >
+                  <img 
+                    src={user.photoURL || ''} 
+                    alt={user.displayName || ''} 
+                    className="w-8 h-8 rounded-lg"
+                    referrerPolicy="no-referrer"
+                  />
+                </button>
+              )}
+              {!user && (
+                <button 
+                  onClick={() => loginWithGoogle()}
+                  className="hidden sm:flex items-center gap-2 px-4 py-2 bg-app-bg hover:bg-app-surface rounded-xl text-sm font-bold transition-all border border-app-border"
+                >
+                  <User className="w-4 h-4" />
+                  دخول
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <div className="flex items-center gap-2">
+                {status?.isScanning ? (
+                  <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                    <RefreshCw className="w-3 h-3 text-emerald-500 animate-spin" />
+                    <span className="text-[10px] font-medium text-emerald-500">{Math.round((status.processedCount / status.totalCount) * 100)}%</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={startScan}
+                    className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-lg shadow-emerald-900/20"
+                    title="بدء مسح يدوي"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                
+                <button
+                  onClick={testTelegram}
+                  disabled={isTestingTelegram || status?.isScanning}
+                  className="p-1.5 bg-app-bg hover:bg-app-surface border border-app-border rounded-lg transition-colors disabled:opacity-50"
+                  title="تجربة التليجرام"
+                >
+                  <Send className={`w-3.5 h-3.5 ${isTestingTelegram ? 'animate-pulse' : ''}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-6 bg-app-surface border border-app-border rounded-2xl shadow-sm dark:shadow-none"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <TrendingUp className="w-5 h-5 text-emerald-500" />
+              <span className="text-xs font-medium text-app-text-muted uppercase tracking-wider">الصفقات النشطة</span>
+            </div>
+            <div className="text-4xl font-bold">{status?.activeTradesCount || 0}</div>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="p-6 bg-app-surface border border-app-border rounded-2xl shadow-sm dark:shadow-none"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <Zap className="w-5 h-5 text-amber-500" />
+              <span className="text-xs font-medium text-app-text-muted uppercase tracking-wider">الموجات المكتشفة</span>
+            </div>
+            <div className="text-4xl font-bold">{status?.waveStocks.length || 0}</div>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="p-6 bg-app-surface border border-app-border rounded-2xl shadow-sm dark:shadow-none"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <Bell className="w-5 h-5 text-blue-500" />
+              <span className="text-xs font-medium text-app-text-muted uppercase tracking-wider">إجمالي التنبيهات</span>
+            </div>
+            <div className="text-4xl font-bold">{status?.alerts.length || 0}</div>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="p-6 bg-app-surface border border-app-border rounded-2xl shadow-sm dark:shadow-none"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <Bell className="w-5 h-5 text-amber-500" />
+              <span className="text-xs font-medium text-app-text-muted uppercase tracking-wider">تنبيهات مخصصة</span>
+            </div>
+            <div className="text-4xl font-bold">{status?.customAlerts.length || 0}</div>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="p-6 bg-app-surface border border-app-border rounded-2xl shadow-sm dark:shadow-none"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <History className="w-5 h-5 text-app-text-muted" />
+              <span className="text-xs font-medium text-app-text-muted uppercase tracking-wider">الأسهم المفحوصة</span>
+            </div>
+            <div className="text-4xl font-bold">{status?.totalCount || 0}</div>
+          </motion.div>
+        </div>
+
+        {/* Market Overview Tables */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <MiniTable title="الأكثر ارتفاعاً" icon={TrendingUp} data={status?.topGainers || []} type="price" onStockClick={setSelectedStock} />
+          <MiniTable title="الأكثر انخفاضاً" icon={TrendingUp} data={status?.topLosers || []} type="price" onStockClick={setSelectedStock} />
+          <MiniTable title="دخول سيولة" icon={CheckCircle2} data={status?.liquidityEntry || []} type="liquidity" onStockClick={setSelectedStock} />
+          <MiniTable title="خروج سيولة" icon={AlertCircle} data={status?.liquidityExit || []} type="liquidity" onStockClick={setSelectedStock} />
+          <MiniTable title="تحليل الموجات" icon={Zap} data={status?.waveStocks || []} type="wave" onStockClick={setSelectedStock} />
+        </div>
+
+        {selectedStock && (
+          <StockDetailsModal 
+            stock={selectedStock} 
+            onClose={() => setSelectedStock(null)} 
+            watchlist={watchlist}
+            onToggleWatchlist={toggleWatchlist}
+          />
+        )}
+
+        {showFeedback && (
+          <FeedbackModal onClose={() => setShowFeedback(false)} user={user} />
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Content Area */}
+          <div className="lg:col-span-2 space-y-6 flex flex-col">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-4 w-full md:w-auto">
+                <button 
+                  onClick={() => setActiveTab('active')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === 'active' 
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-900/20' 
+                      : 'bg-app-surface text-app-text-muted hover:bg-app-bg border border-app-border'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    الصفقات الحالية
+                  </div>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('all')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === 'all' 
+                      ? 'bg-blue-500 text-white shadow-lg shadow-blue-900/20' 
+                      : 'bg-app-surface text-app-text-muted hover:bg-app-bg border border-app-border'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <ListIcon className="w-4 h-4" />
+                    جميع الأسهم
+                  </div>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('watchlist')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === 'watchlist' 
+                      ? 'bg-amber-500 text-white shadow-lg shadow-amber-900/20' 
+                      : 'bg-app-surface text-app-text-muted hover:bg-app-bg border border-app-border'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Star className="w-4 h-4" />
+                    قائمتي ({watchlist.length})
+                  </div>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('margin')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    activeTab === 'margin' 
+                      ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' 
+                      : 'bg-app-surface text-app-text-muted hover:bg-app-bg border border-app-border'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4" />
+                    التداول بالهامش
+                  </div>
+                </button>
+              </div>
+
+              <div className="relative w-full md:w-64">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-app-text-muted" />
+                <input 
+                  type="text"
+                  placeholder="بحث عن سهم أو شركة..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-app-surface border border-app-border rounded-xl pr-10 pl-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                />
+              </div>
+            </div>
+            
+            <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex-1 min-h-[500px] flex flex-col shadow-sm dark:shadow-none">
+              {activeTab === 'margin' ? (
+                <MarginTrading 
+                  user={user}
+                  marginAccount={marginAccount}
+                  marginPositions={marginPositions}
+                  tickerData={status?.tickerData || []}
+                  onClosePosition={closeMarginPosition}
+                />
+              ) : (
+                <>
+                  <div className="flex items-center border-b border-app-border bg-app-surface/50 px-6 h-12">
+                <div className="flex-[1.5] text-xs font-medium text-app-text-muted uppercase">الشركة</div>
+                <div className="flex-1 text-xs font-medium text-app-text-muted uppercase">السعر</div>
+                <div className="flex-1 text-xs font-medium text-app-text-muted uppercase">RSI</div>
+                <div className="flex-[1.5] text-xs font-medium text-app-text-muted uppercase">تحليل الموجات</div>
+                <div className="flex-1 text-xs font-medium text-app-text-muted uppercase text-left">التغيير</div>
+              </div>
+              <div className="flex-1">
+                <AutoSizerAny>
+                  {({ height, width }: any) => {
+                    let dataToDisplay: any[] = activeTab === 'active' 
+                      ? (status?.activeTrades || []) 
+                      : activeTab === 'watchlist'
+                        ? (status?.tickerData.filter(s => watchlist.includes(s.symbol)) || [])
+                        : (status?.tickerData || []);
+                    
+                    if (searchQuery) {
+                      const query = searchQuery.toLowerCase();
+                      dataToDisplay = dataToDisplay.filter((item: any) => 
+                        item.symbol.toLowerCase().includes(query) || 
+                        item.companyName.toLowerCase().includes(query)
+                      );
+                    }
+                    
+                    return (
+                      <List
+                        height={height}
+                        itemCount={dataToDisplay.length}
+                        itemSize={60}
+                        width={width}
+                        direction="rtl"
+                        className="custom-scrollbar"
+                      >
+                        {({ index, style }: any) => {
+                          const item = dataToDisplay[index];
+                          if (!item) return null;
+                          
+                          // Handle both Trade and StockStats types
+                          const symbol = (item as any).symbol;
+                          const companyName = (item as any).companyName;
+                          const price = (item as any).entryPrice || (item as any).price;
+                          const rsi = (item as any).rsi;
+                          const wave = (item as any).wave;
+                          const change = (item as any).change;
+                          const fullStock = status?.tickerData.find(s => s.symbol === symbol);
+ 
+                           return (
+                             <div 
+                               style={style} 
+                               className="flex items-center border-b border-app-border hover:bg-app-bg transition-colors px-6 cursor-pointer"
+                               onClick={() => fullStock && setSelectedStock(fullStock)}
+                             >
+                               <div className="flex-[1.5]">
+                                 <div className="font-bold text-emerald-500">{companyName}</div>
+                                 <div className="text-[10px] text-app-text-muted font-mono">{symbol}</div>
+                               </div>
+                               <div className="flex-1 font-mono">{price.toFixed(2)}</div>
+                               <div className="flex-1 font-mono">{rsi.toFixed(1)}</div>
+                               <div className="flex-[1.5] text-xs font-medium">
+                                 {wave && wave !== "غير محدد" ? (
+                                   <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded border border-amber-500/20">
+                                     {wave}
+                                   </span>
+                                 ) : (
+                                   <span className="text-app-text-muted italic opacity-50">---</span>
+                                 )}
+                               </div>
+                               <div className={`flex-1 text-sm font-bold text-left ${change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                 {change !== undefined ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '---'}
+                               </div>
+                             </div>
+                           );
+                         }}
+                       </List>
+                     );
+                   }}
+                 </AutoSizerAny>
+                 {activeTab === 'active' && status?.activeTrades.length === 0 && (
+                   <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic">
+                     لا توجد صفقات نشطة حالياً
+                   </div>
+                 )}
+                 {activeTab === 'watchlist' && watchlist.length === 0 && (
+                   <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic flex-col gap-2">
+                     <Star className="w-8 h-8 opacity-20" />
+                     قائمتك فارغة. أضف أسهمك المفضلة لمتابعتها هنا.
+                   </div>
+                 )}
+                 {activeTab === 'all' && status?.tickerData.length === 0 && (
+                   <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic">
+                     جاري تحميل بيانات السوق...
+                   </div>
+                 )}
+                 {searchQuery && (status?.tickerData.length || 0) > 0 && (
+                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-app-surface/80 backdrop-blur-sm border border-app-border rounded-full text-[10px] text-app-text-muted">
+                     تم العثور على نتائج البحث
+                   </div>
+                 )}
+               </div>
+             </div>
+           </div>
+ 
+           {/* Recent Alerts Feed */}
+           <div className="space-y-4 flex flex-col">
+             {/* Telegram Join Card */}
+             <motion.div 
+               initial={{ opacity: 0, scale: 0.95 }}
+               animate={{ opacity: 1, scale: 1 }}
+               className="p-6 bg-gradient-to-br from-[#0088cc]/20 to-[#0088cc]/5 border border-[#0088cc]/20 rounded-2xl relative overflow-hidden group"
+             >
+               <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform duration-500">
+                 <Send className="w-24 h-24 text-[#0088cc]" />
+               </div>
+               <div className="relative z-10 space-y-4">
+                 <div className="flex items-center gap-3">
+                   <div className="p-2 bg-[#0088cc] rounded-lg shadow-lg shadow-blue-500/20">
+                     <Send className="w-5 h-5 text-white" />
+                   </div>
+                   <div>
+                     <h3 className="font-bold text-white">قناة التليجرام الرسمية</h3>
+                     <p className="text-[10px] text-blue-400 font-medium">انضم لمجتمع المتداولين</p>
+                   </div>
+                 </div>
+                 <p className="text-xs text-app-text-muted leading-relaxed">
+                   احصل على تنبيهات فورية، تحليلات يومية، ومتابعة حية مباشرة على جوالك. لا تفوت أي فرصة في السوق السعودي!
+                 </p>
+                 <a
+                   href={status?.telegramBotName ? `https://t.me/${status.telegramBotName}` : "https://t.me/Aboamran2016"}
+                   target="_blank"
+                   rel="noreferrer"
+                   className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#0088cc] hover:bg-[#0077b5] text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-900/30 hover:shadow-blue-900/50"
+                 >
+                   انضم الآن مجاناً
+                 </a>
+               </div>
+             </motion.div>
+ 
+             <h2 className="text-lg font-semibold flex items-center gap-2">
+               <Bell className="w-5 h-5 text-amber-500" />
+               آخر التنبيهات
+             </h2>
+             <div className="bg-app-surface/50 border border-app-border rounded-2xl overflow-hidden flex-1 min-h-[500px] relative">
+               <AutoSizerAny>
+                 {({ height, width }: any) => (
+                   <List
+                     height={height}
+                     itemCount={status?.alerts.length || 0}
+                     itemSize={90}
+                     width={width}
+                     direction="rtl"
+                     className="custom-scrollbar"
+                   >
+                     {AlertRow}
+                   </List>
+                 )}
+               </AutoSizerAny>
+               {status?.alerts.length === 0 && (
+                 <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic text-sm">
+                   لا توجد تنبيهات بعد
+                 </div>
+               )}
+             </div>
+           </div>
+        </div>
+      </main>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: var(--color-app-border);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: var(--color-app-text-muted);
+        }
+      `}} />
+    </div>
+  );
+}

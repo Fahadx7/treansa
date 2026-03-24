@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user information and settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "format": "email", "description": "User's email address" },
+        "photoURL": { "type": "string", "format": "uri", "description": "User's photo URL" },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "User's role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "WatchlistItem": {
+      "title": "Watchlist Item",
+      "description": "A stock symbol in a user's watchlist.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user" },
+        "symbol": { "type": "string", "description": "Stock symbol (e.g., 1120)" },
+        "addedAt": { "type": "string", "format": "date-time", "description": "When it was added" }
+      },
+      "required": ["userId", "symbol"]
+    },
+    "Feedback": {
+      "title": "User Feedback",
+      "description": "Feedback submitted by users.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user (if logged in)" },
+        "name": { "type": "string", "description": "User's name" },
+        "email": { "type": "string", "format": "email", "description": "User's email" },
+        "type": { "type": "string", "enum": ["تحسين", "خطأ", "ميزة", "أخرى"], "description": "Feedback type" },
+        "message": { "type": "string", "description": "The feedback message" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When it was submitted" }
+      },
+      "required": ["type", "message", "createdAt"]
+    },
+    "MarginAccount": {
+      "title": "Margin Account",
+      "description": "Tracks a user's margin balance and equity.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user" },
+        "balance": { "type": "number", "description": "Cash balance" },
+        "equity": { "type": "number", "description": "Total equity (cash + position value - debt)" },
+        "marginUsed": { "type": "number", "description": "Total borrowed amount" },
+        "maintenanceMargin": { "type": "number", "description": "Minimum equity required to avoid margin call" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update time" }
+      },
+      "required": ["userId", "balance", "equity", "marginUsed"]
+    },
+    "MarginPosition": {
+      "title": "Margin Position",
+      "description": "An open or closed margin trade.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user" },
+        "symbol": { "type": "string", "description": "Stock symbol" },
+        "quantity": { "type": "number", "description": "Number of shares" },
+        "entryPrice": { "type": "number", "description": "Price at entry" },
+        "currentPrice": { "type": "number", "description": "Current market price" },
+        "leverage": { "type": "number", "description": "Leverage used (e.g., 2)" },
+        "marginRequired": { "type": "number", "description": "Initial margin required" },
+        "status": { "type": "string", "enum": ["open", "closed"], "description": "Position status" },
+        "openedAt": { "type": "string", "format": "date-time", "description": "When opened" },
+        "closedAt": { "type": "string", "format": "date-time", "description": "When closed" }
+      },
+      "required": ["userId", "symbol", "quantity", "entryPrice", "status", "openedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/watchlists/{watchlistId}": {
+      "schema": "WatchlistItem",
+      "description": "Individual watchlist items"
+    },
+    "/feedback/{feedbackId}": {
+      "schema": "Feedback",
+      "description": "User feedback submissions"
+    },
+    "/margin_accounts/{userId}": {
+      "schema": "MarginAccount",
+      "description": "User margin account details"
+    },
+    "/margin_positions/{positionId}": {
+      "schema": "MarginPosition",
+      "description": "Individual margin positions"
+    }
+  }
+}

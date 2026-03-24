@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Auth UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (optional)
+    //   - email: string (required, email format)
+    //   - photoURL: string (optional, uri format)
+    //   - role: string (required, 'admin' or 'user')
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: watchlists
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required, Auth UID)
+    //   - symbol: string (required)
+    //   - addedAt: timestamp (required)
+    //
+    // Collection: feedback
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (optional, Auth UID)
+    //   - name: string (optional)
+    //   - email: string (optional, email format)
+    //   - type: string (required, enum)
+    //   - message: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: margin_accounts
+    // Document ID: {userId} (Auth UID)
+    // Fields:
+    //   - userId: string (required)
+    //   - balance: number (required)
+    //   - equity: number (required)
+    //   - marginUsed: number (required)
+    //   - maintenanceMargin: number (optional)
+    //   - updatedAt: timestamp (optional)
+    //
+    // Collection: margin_positions
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required)
+    //   - symbol: string (required)
+    //   - quantity: number (required)
+    //   - entryPrice: number (required)
+    //   - currentPrice: number (optional)
+    //   - leverage: number (optional)
+    //   - marginRequired: number (optional)
+    //   - status: string (required, 'open' or 'closed')
+    //   - openedAt: timestamp (required)
+    //   - closedAt: timestamp (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // تحقق فقط من الـ role في قاعدة البيانات (لا تضع بريدك الإلكتروني هنا)
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'displayName', 'email', 'photoURL', 'role', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'user'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidWatchlist(data) {
+      return hasOnlyAllowedFields(['userId', 'symbol', 'addedAt']) &&
+             data.userId == request.auth.uid &&
+             data.symbol is string && data.symbol.size() > 0 && data.symbol.size() < 20 &&
+             data.addedAt is timestamp;
+    }
+
+    function isValidFeedback(data) {
+      return hasOnlyAllowedFields(['userId', 'name', 'email', 'type', 'message', 'createdAt']) &&
+             data.type in ['تحسين', 'خطأ', 'ميزة', 'أخرى'] &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
+             data.createdAt is timestamp &&
+             (!('email' in data) || isValidEmail(data.email));
+    }
+
+    function isValidMarginAccount(data) {
+      return hasOnlyAllowedFields(['userId', 'balance', 'equity', 'marginUsed', 'maintenanceMargin', 'updatedAt']) &&
+             data.userId == request.auth.uid &&
+             data.balance is number &&
+             data.equity is number &&
+             data.marginUsed is number;
+    }
+
+    function isValidMarginPosition(data) {
+      return hasOnlyAllowedFields(['userId', 'symbol', 'quantity', 'entryPrice', 'currentPrice', 'leverage', 'marginRequired', 'status', 'openedAt', 'closedAt']) &&
+             data.userId == request.auth.uid &&
+             data.symbol is string &&
+             data.quantity is number && data.quantity > 0 &&
+             data.entryPrice is number && data.entryPrice > 0 &&
+             data.status in ['open', 'closed'] &&
+             data.openedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /watchlists/{watchlistId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidWatchlist(request.resource.data);
+      allow update: if false; // Watchlist items are immutable, delete and recreate
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /feedback/{feedbackId} {
+      allow read: if isAdmin();
+      allow create: if isValidFeedback(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    match /margin_accounts/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidMarginAccount(request.resource.data);
+      allow update: if (isOwner(userId) && isValidMarginAccount(request.resource.data)) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /margin_positions/{positionId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidMarginPosition(request.resource.data);
+      // عند التحديث: الحقول الحرجة (symbol, entryPrice, openedAt, userId) لا يمكن تغييرها
+      allow update: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin()) &&
+        isValidMarginPosition(request.resource.data) &&
+        request.resource.data.symbol     == resource.data.symbol &&
+        request.resource.data.entryPrice == resource.data.entryPrice &&
+        request.resource.data.openedAt   == resource.data.openedAt &&
+        request.resource.data.userId     == resource.data.userId;
+      allow delete: if isAdmin();
+    }
+  }
+}
