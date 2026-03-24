@@ -7,6 +7,11 @@ import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
 import { SAUDI_STOCKS } from './src/symbols';
 
+// تعطيل schema validation في yahoo-finance2 v3 (يسبب خطأ "did not match expected pattern" للأسهم السعودية)
+yahooFinance.setGlobalConfig({
+    validation: { logErrors: false, logNotices: false }
+});
+
 // --- إعدادات التليجرام ---
 const cleanToken = (t: string) => {
     if (!t) return "";
@@ -282,12 +287,12 @@ function calculateStochasticRSI(closes: number[], rsiPeriod = 14, stochPeriod = 
 async function analyzeStock(symbol: string) {
     try {
         const period1 = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
-        const result = await yahooFinance.chart(symbol, { interval: '5m', period1 }) as any;
+        const result = await yahooFinance.chart(symbol, { interval: '5m', period1 }, { validateResult: false }) as any;
         
         if (!result || !result.quotes || result.quotes.length < 50) {
             // Fallback for ticker tape
             try {
-                const quote = await yahooFinance.quote(symbol) as any;
+                const quote = await yahooFinance.quote(symbol, {}, { validateResult: false }) as any;
                 if (quote) {
                     const stockData = {
                         symbol,
@@ -574,7 +579,7 @@ async function startFullScan() {
     
     // جلب بيانات المؤشر العام (TASI)
     try {
-        const tasiResult = await yahooFinance.quote('^TASI') as any;
+        const tasiResult = await yahooFinance.quote('^TASI', {}, { validateResult: false }) as any;
         if (tasiResult) {
             scanStatus.marketIndex = {
                 price: tasiResult.regularMarketPrice,
@@ -601,7 +606,7 @@ async function startFullScan() {
         const chunk = symbols.slice(i, i + quoteChunkSize);
         try {
             console.log(`   - جلب الحزمة ${Math.floor(i / quoteChunkSize) + 1}...`);
-            const quotes = await yahooFinance.quote(chunk) as any;
+            const quotes = await yahooFinance.quote(chunk, {}, { validateResult: false }) as any;
             
             if (!Array.isArray(quotes)) {
                 console.warn(`⚠️ [${new Date().toLocaleTimeString()}] استجابة غير متوقعة من ياهو فاينانس (ليست مصفوفة)`);
@@ -634,7 +639,7 @@ async function startFullScan() {
             console.log(`   🔄 محاولة جلب الأسهم بشكل فردي لهذه الحزمة...`);
             for (const s of chunk) {
                 try {
-                    const q = await yahooFinance.quote(s) as any;
+                    const q = await yahooFinance.quote(s, {}, { validateResult: false }) as any;
                     if (q && q.symbol) {
                         const stockData = {
                             symbol: q.symbol,
@@ -897,7 +902,7 @@ async function startServer() {
         console.log(`📈 [${new Date().toLocaleTimeString()}] جلب تاريخ السهم: ${symbol}`);
         try {
             const period1 = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60); // Last 30 days
-            const result = await yahooFinance.chart(symbol, { interval: '1h', period1 }) as any;
+            const result = await yahooFinance.chart(symbol, { interval: '1h', period1 }, { validateResult: false }) as any;
             
             if (!result || !result.quotes || result.quotes.length === 0) {
                 console.warn(`⚠️ [${new Date().toLocaleTimeString()}] لا توجد بيانات تاريخية لـ ${symbol}`);
@@ -1098,7 +1103,7 @@ ATR (14): ${atr ?? 'N/A'}
         // اختبار الاتصال بياهو فاينانس عند التشغيل
         try {
             console.log("🧪 اختبار الاتصال بياهو فاينانس (سهم الراجحي 1120.SR)...");
-            const testQuote = await yahooFinance.quote('1120.SR') as any;
+            const testQuote = await yahooFinance.quote('1120.SR', {}, { validateResult: false }) as any;
             if (testQuote) {
                 console.log(`✅ نجح الاختبار! السعر الحالي للراجحي: ${testQuote.regularMarketPrice}`);
             }
