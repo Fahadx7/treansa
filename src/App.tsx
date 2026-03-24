@@ -83,6 +83,16 @@ import {
   updateDoc
 } from 'firebase/firestore';
 
+import { SAUDI_STOCKS } from './symbols';
+import {
+  fetchQuotesBatch,
+  fetchChart,
+  buildStockFromQuote,
+  buildHistoryFromChart,
+  computeIndicators,
+  getAllSymbols,
+} from './marketData';
+
 const List = (ReactWindow as any).FixedSizeList;
 const AutoSizerAny = (AutoSizerModule as any).default || (AutoSizerModule as any).AutoSizer || AutoSizerModule;
 
@@ -303,13 +313,7 @@ const LogoGenerator = () => {
   const generateLogo = async () => {
     setIsGenerating(true);
     try {
-      const response = await fetch('/api/ai-logo', { method: 'POST' });
-      const data = await response.json();
-      if (data.success && data.images?.length) {
-        setLogos(prev => [...data.images, ...prev]);
-      }
-    } catch (error) {
-      console.error("Error generating logo:", error);
+      // AI logo generation requires backend
     } finally {
       setIsGenerating(false);
     }
@@ -459,6 +463,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [liveIndicators, setLiveIndicators] = useState<ReturnType<typeof computeIndicators> | null>(null);
 
   // AI Analyst States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -477,27 +482,8 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const handleAIAnalysis = async () => {
     setIsAnalyzing(true);
     try {
-      const response = await fetch('/api/ai-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: stock.symbol,
-          companyName: stock.companyName,
-          price: stock.price,
-          change: stock.change,
-          rsi: stock.rsi,
-          wave: stock.wave,
-          macd: stock.macd,
-          bb: stock.bb,
-          atr: (stock as any).atr,
-          stochRsi: (stock as any).stochRsi
-        })
-      });
-      const data = await response.json();
-      setAiAnalysis(data.analysis || data.error || "فشل في الحصول على تحليل.");
-    } catch (error) {
-      console.error("AI Analysis Error:", error);
-      setAiAnalysis("حدث خطأ أثناء الاتصال بالخادم لجلب التحليل.");
+      await new Promise(r => setTimeout(r, 300));
+      setAiAnalysis('⚠️ تحليل الذكاء الاصطناعي يتطلب الاتصال بالخادم.\n\nيمكنك استخدام مؤشرات الرسم البياني للتحليل الذاتي.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -508,20 +494,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
     setLoadingNews(true);
     setNewsError(null);
     try {
-      const response = await fetch('/api/ai-news', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: stock.symbol, companyName: stock.companyName })
-      });
-      const data = await response.json();
-      if (data.success && Array.isArray(data.news)) {
-        setNews(data.news);
-      } else {
-        setNewsError(data.error || "فشل جلب الأخبار.");
-      }
-    } catch (error) {
-      console.error("News Fetch Error:", error);
-      setNewsError("فشل الاتصال بالخادم لجلب الأخبار.");
+      setNewsError('ميزة الأخبار تتطلب الاتصال بالخادم.');
     } finally {
       setLoadingNews(false);
     }
@@ -556,27 +529,30 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   };
 
   const riskResult = calcRisk();
+  // Merge live indicators (computed from chart) over the basic quote data
+  const ds = liveIndicators ? { ...stock, ...liveIndicators } : stock;
 
   useEffect(() => {
-    const fetchHistory = async () => {
+    const loadHistory = async () => {
       setLoadingHistory(true);
       setHistoryError(null);
       try {
-        const res = await fetch(`/api/history/${stock.symbol}`);
-        const data = await res.json();
-        if (data.success && data.history && data.history.length > 0) {
-          setHistory(data.history);
+        const { meta, quotes } = await fetchChart(stock.symbol, '1h', '30d');
+        const hist = buildHistoryFromChart(meta, quotes);
+        if (hist.length > 0) {
+          setHistory(hist);
+          setLiveIndicators(computeIndicators(quotes));
         } else {
-          setHistoryError(data.error || 'لا توجد بيانات متاحة لهذا السهم حالياً');
+          setHistoryError('لا توجد بيانات متاحة لهذا السهم حالياً');
         }
       } catch (e) {
         console.error('Failed to fetch history', e);
-        setHistoryError('فشل الاتصال بالخادم لجلب البيانات');
+        setHistoryError('فشل جلب البيانات من Yahoo Finance');
       } finally {
         setLoadingHistory(false);
       }
     };
-    fetchHistory();
+    loadHistory();
   }, [stock.symbol]);
 
   const handleSetAlert = async () => {
@@ -587,25 +563,21 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
 
     setIsSettingAlert(true);
     try {
-      const response = await fetch('/api/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: stock.symbol,
-          targetPrice: targetPrice || undefined,
-          targetRsi: targetRsi || undefined
-        })
+      const key = 'saudi_stock_alerts';
+      const existing: any[] = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.push({
+        symbol: stock.symbol,
+        targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
+        targetRsi: targetRsi ? parseFloat(targetRsi) : undefined,
+        triggered: false,
+        createdAt: new Date().toISOString(),
       });
-      const data = await response.json();
-      if (data.success) {
-        setAlertStatus({ type: 'success', message: '✅ تم ضبط التنبيه بنجاح' });
-        setTargetPrice('');
-        setTargetRsi('');
-      } else {
-        setAlertStatus({ type: 'error', message: '❌ فشل ضبط التنبيه' });
-      }
+      localStorage.setItem(key, JSON.stringify(existing));
+      setAlertStatus({ type: 'success', message: '✅ تم ضبط التنبيه (يُحفظ محلياً)' });
+      setTargetPrice('');
+      setTargetRsi('');
     } catch (error) {
-      setAlertStatus({ type: 'error', message: '❌ خطأ في الاتصال' });
+      setAlertStatus({ type: 'error', message: '❌ فشل ضبط التنبيه' });
     } finally {
       setIsSettingAlert(false);
       setTimeout(() => setAlertStatus({ type: null, message: '' }), 3000);
@@ -829,23 +801,23 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                       <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-xs font-bold text-app-text">MACD (12, 26, 9)</span>
-                          <span className={`text-xs font-mono ${stock.macd?.histogram && stock.macd.histogram >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                            {stock.macd?.histogram && stock.macd.histogram >= 0 ? 'إيجابي' : 'سلبي'}
+                          <span className={`text-xs font-mono ${ds.macd?.histogram && ds.macd.histogram >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {ds.macd?.histogram && ds.macd.histogram >= 0 ? 'إيجابي' : 'سلبي'}
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div>
                             <p className="text-[10px] text-app-text-muted">MACD</p>
-                            <p className="text-sm font-mono text-app-text">{stock.macd?.macd || '---'}</p>
+                            <p className="text-sm font-mono text-app-text">{ds.macd?.macd || '---'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-app-text-muted">Signal</p>
-                            <p className="text-sm font-mono text-app-text">{stock.macd?.signal || '---'}</p>
+                            <p className="text-sm font-mono text-app-text">{ds.macd?.signal || '---'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-app-text-muted">Hist</p>
-                            <p className={`text-sm font-mono ${stock.macd?.histogram && stock.macd.histogram >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                              {stock.macd?.histogram || '---'}
+                            <p className={`text-sm font-mono ${ds.macd?.histogram && ds.macd.histogram >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {ds.macd?.histogram || '---'}
                             </p>
                           </div>
                         </div>
@@ -859,15 +831,15 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div>
                             <p className="text-[10px] text-app-text-muted">Upper</p>
-                            <p className="text-sm font-mono text-app-text">{stock.bb?.upper || '---'}</p>
+                            <p className="text-sm font-mono text-app-text">{ds.bb?.upper || '---'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-app-text-muted">Middle</p>
-                            <p className="text-sm font-mono text-app-text">{stock.bb?.middle || '---'}</p>
+                            <p className="text-sm font-mono text-app-text">{ds.bb?.middle || '---'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-app-text-muted">Lower</p>
-                            <p className="text-sm font-mono text-app-text">{stock.bb?.lower || '---'}</p>
+                            <p className="text-sm font-mono text-app-text">{ds.bb?.lower || '---'}</p>
                           </div>
                         </div>
                       </div>
@@ -876,34 +848,34 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
                           <p className="text-[10px] text-app-text-muted mb-1">RSI (14)</p>
-                          <p className={`text-lg font-bold ${stock.rsi > 70 ? 'text-rose-500' : stock.rsi < 30 ? 'text-emerald-500' : 'text-app-text'}`}>
-                            {stock.rsi.toFixed(1)}
+                          <p className={`text-lg font-bold ${ds.rsi > 70 ? 'text-rose-500' : ds.rsi < 30 ? 'text-emerald-500' : 'text-app-text'}`}>
+                            {ds.rsi.toFixed(1)}
                           </p>
                           <p className="text-[9px] text-app-text-muted mt-0.5">
-                            {stock.rsi > 70 ? 'تشبع شرائي' : stock.rsi < 30 ? 'تشبع بيعي' : 'محايد'}
+                            {ds.rsi > 70 ? 'تشبع شرائي' : ds.rsi < 30 ? 'تشبع بيعي' : 'محايد'}
                           </p>
                         </div>
                         <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
                           <p className="text-[10px] text-app-text-muted mb-1">Stoch RSI</p>
-                          {stock.stochRsi ? (
+                          {ds.stochRsi ? (
                             <>
-                              <p className={`text-lg font-bold ${stock.stochRsi.k > 80 ? 'text-rose-500' : stock.stochRsi.k < 20 ? 'text-emerald-500' : 'text-app-text'}`}>
-                                K: {stock.stochRsi.k.toFixed(1)}
+                              <p className={`text-lg font-bold ${ds.stochRsi.k > 80 ? 'text-rose-500' : ds.stochRsi.k < 20 ? 'text-emerald-500' : 'text-app-text'}`}>
+                                K: {ds.stochRsi.k.toFixed(1)}
                               </p>
-                              <p className="text-[9px] text-app-text-muted">D: {stock.stochRsi.d.toFixed(1)}</p>
+                              <p className="text-[9px] text-app-text-muted">D: {ds.stochRsi.d.toFixed(1)}</p>
                             </>
                           ) : <p className="text-sm text-app-text-muted">---</p>}
                         </div>
-                        {stock.atr && stock.atr > 0 && (
+                        {ds.atr && ds.atr > 0 && (
                           <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
                             <p className="text-[10px] text-app-text-muted mb-1">ATR (14)</p>
-                            <p className="text-lg font-bold text-blue-400">{stock.atr.toFixed(3)}</p>
-                            <p className="text-[9px] text-app-text-muted">وقف مقترح: {(stock.price - stock.atr * 1.5).toFixed(2)}</p>
+                            <p className="text-lg font-bold text-blue-400">{ds.atr.toFixed(3)}</p>
+                            <p className="text-[9px] text-app-text-muted">وقف مقترح: {(stock.price - ds.atr * 1.5).toFixed(2)}</p>
                           </div>
                         )}
                         <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border col-span-1">
                           <p className="text-[10px] text-app-text-muted mb-1">موجة إليوت</p>
-                          <p className="text-xs font-bold text-amber-500 truncate">{stock.wave || 'غير محدد'}</p>
+                          <p className="text-xs font-bold text-amber-500 truncate">{ds.wave || 'غير محدد'}</p>
                         </div>
                       </div>
                     </div>
@@ -1209,18 +1181,7 @@ const FeedbackModal = ({ onClose, user }: { onClose: () => void, user: FirebaseU
 
     setIsSending(true);
     try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, type, message })
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || 'فشل إرسال الملاحظة');
-      }
-
+      await addDoc(collection(db, 'feedback'), { name, email, type, message, createdAt: serverTimestamp() });
       setStatus({ type: 'success', message: '✅ شكراً لك! تم استلام ملاحظتك بنجاح.' });
       setTimeout(onClose, 2000);
     } catch (error) {
@@ -1497,7 +1458,7 @@ function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
@@ -1683,70 +1644,80 @@ function App() {
     }
   };
 
-  const fetchStatus = async () => {
+  const runMarketScan = async () => {
+    setIsLoadingData(true);
     try {
-      const res = await fetch('/api/status');
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data = await res.json();
-      setStatus(data);
+      const symbols = getAllSymbols();
+      const allStocks: StockStats[] = [];
+      const CHUNK = 20;
+      for (let i = 0; i < symbols.length; i += CHUNK) {
+        try {
+          const qs = await fetchQuotesBatch(symbols.slice(i, i + CHUNK));
+          for (const q of qs) if (q.regularMarketPrice) allStocks.push(buildStockFromQuote(q));
+        } catch { /* skip failed chunk */ }
+      }
+      if (allStocks.length === 0) throw new Error('فشل في جلب بيانات الأسهم من Yahoo Finance — تحقق من اتصالك بالإنترنت');
+
+      let marketIndex = null;
+      try {
+        const [t] = await fetchQuotesBatch(['^TASI']);
+        if (t) marketIndex = {
+          price: t.regularMarketPrice,
+          change: t.regularMarketChange,
+          changePercent: t.regularMarketChangePercent,
+          high: t.regularMarketDayHigh,
+          low: t.regularMarketDayLow,
+          volume: t.regularMarketVolume,
+          time: new Date().toISOString(),
+        };
+      } catch { /* TASI optional */ }
+
+      const topGainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 10);
+      const topLosers     = [...allStocks].sort((a, b) => a.change - b.change).slice(0, 10);
+      const liquidityEntry = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
+      const liquidityExit  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change < 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
+
+      setStatus({
+        lastScan: new Date().toISOString(),
+        isScanning: false,
+        processedCount: allStocks.length,
+        totalCount: symbols.length,
+        activeTradesCount: 0,
+        activeTrades: [],
+        alerts: [],
+        topGainers,
+        topLosers,
+        liquidityEntry,
+        liquidityExit,
+        waveStocks: [],
+        tickerData: allStocks,
+        customAlerts: [],
+        marketIndex,
+        telegramConnected: false,
+        telegramBotName: null,
+        botStatusError: null,
+      });
       setFetchError(null);
     } catch (e: any) {
-      console.error('Failed to fetch status', e);
-      setFetchError(e.message || 'خطأ في الاتصال بالخادم');
+      console.error('Market scan failed', e);
+      setFetchError(e.message || 'خطأ في جلب البيانات');
     } finally {
-      setLoading(false);
+      setIsLoadingData(false);
     }
   };
 
-  const testTelegram = async () => {
-    setIsTestingTelegram(true);
-    setTelegramStatus({ type: null, message: '' });
-    try {
-      const response = await fetch('/api/test-telegram', { method: 'POST' });
-      const data = await response.json();
-      if (data.success) {
-        setTelegramStatus({ 
-          type: 'success', 
-          message: `✅ تم الإرسال عبر @${data.message.split('@')[1]} إلى ID: ${data.chatId}` 
-        });
-      } else {
-        const errorMsg = data.error || 'خطأ غير معروف';
-        setTelegramStatus({ 
-          type: 'error', 
-          message: errorMsg.includes('404') 
-            ? '❌ التوكن غير صحيح (404). تأكد من نسخه كاملاً من BotFather.' 
-            : `❌ فشل الإرسال: ${errorMsg}` 
-        });
-      }
-    } catch (error) {
-      setTelegramStatus({ type: 'error', message: '❌ خطأ في الاتصال بالخادم' });
-    } finally {
-      setIsTestingTelegram(false);
-      // Clear status after 5 seconds
-      setTimeout(() => setTelegramStatus({ type: null, message: '' }), 5000);
-    }
+  const testTelegram = () => {
+    setTelegramStatus({ type: 'error', message: '⚠️ ميزة التليجرام تتطلب الاتصال بالخادم.' });
+    setTimeout(() => setTelegramStatus({ type: null, message: '' }), 5000);
   };
 
-  const startScan = async () => {
-    try {
-      const response = await fetch('/api/scan', { method: 'POST' });
-      const data = await response.json();
-      if (data.success) {
-        setTelegramStatus({ type: 'success', message: '🚀 بدأ المسح اليدوي للسوق...' });
-        fetchStatus();
-      } else {
-        setTelegramStatus({ type: 'error', message: '⚠️ ' + (data.message || 'خطأ في بدء المسح') });
-      }
-    } catch (error) {
-      setTelegramStatus({ type: 'error', message: '❌ خطأ في الاتصال بالخادم' });
-    } finally {
-      setTimeout(() => setTelegramStatus({ type: null, message: '' }), 5000);
-    }
+  const startScan = () => {
+    runMarketScan();
   };
 
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
+    runMarketScan();
+    const interval = setInterval(runMarketScan, 300000); // refresh every 5 min
     return () => clearInterval(interval);
   }, []);
 
@@ -1907,70 +1878,19 @@ function App() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-app-bg flex flex-col items-center justify-center transition-colors gap-4">
-        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-        <p className="text-app-text-muted text-sm animate-pulse">جاري الاتصال بالرادار...</p>
-      </div>
-    );
-  }
-
-  if (fetchError && !status) {
-    return (
-      <div className="min-h-screen bg-app-bg flex items-center justify-center p-6 text-center" dir="rtl">
-        <div className="bg-app-surface border border-app-border p-8 rounded-3xl max-w-md w-full space-y-4">
-          <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
-            <AlertCircle className="w-8 h-8 text-rose-500" />
-          </div>
-          <h2 className="text-xl font-bold text-app-text">خطأ في جلب البيانات</h2>
-          <p className="text-app-text-muted text-sm">{fetchError}</p>
-          <button 
-            onClick={() => {
-              setLoading(true);
-              fetchStatus();
-            }}
-            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            حاول مرة أخرى
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!status || (status.tickerData.length === 0 && !status.isScanning)) {
-    return (
-      <div className="min-h-screen bg-app-bg flex items-center justify-center p-6 text-center" dir="rtl">
-        <div className="bg-app-surface border border-app-border p-8 rounded-3xl max-w-md w-full space-y-4">
-          <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto">
-            <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-          </div>
-          <h2 className="text-xl font-bold text-app-text">جاري تهيئة البيانات</h2>
-          <p className="text-app-text-muted text-sm">يقوم الرادار حالياً بجمع بيانات السوق السعودي لأول مرة. قد يستغرق هذا دقيقة واحدة.</p>
-          <div className="w-full bg-app-bg rounded-full h-2 overflow-hidden">
-            <motion.div 
-              className="bg-emerald-500 h-full"
-              initial={{ width: "0%" }}
-              animate={{ width: "100%" }}
-              transition={{ duration: 60, ease: "linear" }}
-            />
-          </div>
-          <button 
-            onClick={() => fetchStatus()}
-            className="w-full py-3 bg-app-bg hover:bg-app-surface text-app-text font-bold rounded-xl border border-app-border transition-all flex items-center justify-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            تحديث الحالة
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-app-bg text-app-text font-sans selection:bg-emerald-500/30 transition-colors duration-300" dir="rtl">
+      {/* Top loading bar */}
+      {isLoadingData && (
+        <div className="fixed top-0 left-0 right-0 z-[200] h-0.5 bg-emerald-500/20 overflow-hidden">
+          <motion.div
+            className="h-full bg-emerald-500"
+            initial={{ x: '-100%' }}
+            animate={{ x: '400%' }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </div>
+      )}
       <TickerTape data={status?.tickerData || []} marketIndex={status?.marketIndex} />
       
       {/* TASI Sidebar Widget */}
@@ -2134,29 +2054,15 @@ function App() {
 
             <div className="flex flex-col items-end gap-1 shrink-0">
               <div className="flex items-center gap-2">
-                {status?.isScanning ? (
-                  <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-                    <RefreshCw className="w-3 h-3 text-emerald-500 animate-spin" />
-                    <span className="text-[10px] font-medium text-emerald-500">{Math.round((status.processedCount / status.totalCount) * 100)}%</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={startScan}
-                    className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-lg shadow-emerald-900/20"
-                    title="بدء مسح يدوي"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                
                 <button
-                  onClick={testTelegram}
-                  disabled={isTestingTelegram || status?.isScanning}
-                  className="p-1.5 bg-app-bg hover:bg-app-surface border border-app-border rounded-lg transition-colors disabled:opacity-50"
-                  title="تجربة التليجرام"
-                >
-                  <Send className={`w-3.5 h-3.5 ${isTestingTelegram ? 'animate-pulse' : ''}`} />
-                </button>
+                    onClick={startScan}
+                    disabled={isLoadingData}
+                    className="p-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg transition-colors shadow-lg shadow-emerald-900/20"
+                    title="تحديث البيانات"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
+                  </button>
+                
               </div>
             </div>
           </div>
@@ -2164,6 +2070,14 @@ function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+        {/* Inline error banner */}
+        {fetchError && (
+          <div className="flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-sm text-rose-400">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{fetchError}</span>
+            <button onClick={runMarketScan} className="text-xs underline underline-offset-2 whitespace-nowrap">إعادة المحاولة</button>
+          </div>
+        )}
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <motion.div 

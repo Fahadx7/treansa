@@ -3,7 +3,9 @@
     "allow": [
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(npm run:*)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Read(//c/Users/aboam/**)",
+      "Read(//c/Users/aboam/OneDrive/Desktop/**)"
     ]
   }
 }

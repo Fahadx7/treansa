@@ -2,16 +2,95 @@ import 'dotenv/config';
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import yahooFinance from 'yahoo-finance2';
 import fetch from 'node-fetch';
+
+// ========= Yahoo Finance direct fetch =========
+const YF_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const YF_HEADERS: Record<string, string> = {
+    'User-Agent': YF_UA,
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+};
+
+let yfCrumb: string | null = null;
+let yfCookies: string | null = null;
+let yfCrumbExpiry = 0;
+
+async function initYFCrumb(): Promise<void> {
+    if (yfCrumb && Date.now() < yfCrumbExpiry) return;
+    try {
+        const r1 = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': YF_UA }, redirect: 'follow' });
+        const setCookie = r1.headers.get('set-cookie') || '';
+        yfCookies = setCookie.split(',').map((c: string) => c.split(';')[0].trim()).filter(Boolean).join('; ');
+        const r2 = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+            headers: { 'User-Agent': YF_UA, 'Cookie': yfCookies }
+        });
+        if (r2.ok) {
+            yfCrumb = (await r2.text()).trim();
+            yfCrumbExpiry = Date.now() + 3600_000;
+            console.log('✅ YF crumb initialized');
+        }
+    } catch (e) {
+        console.error('❌ Failed to get YF crumb:', e);
+    }
+}
+
+function yfFetchHeaders(): Record<string, string> {
+    const h: Record<string, string> = { ...YF_HEADERS };
+    if (yfCookies) h['Cookie'] = yfCookies;
+    return h;
+}
+
+async function fetchWithTimeout(url: string, opts: any = {}): Promise<any> {
+    const { timeoutMs = 6000, ...fetchOpts } = opts;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...fetchOpts, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function yfChart(symbol: string, interval: string, period1: number): Promise<{ meta: any; quotes: any[] }> {
+    await initYFCrumb();
+    const period2 = Math.floor(Date.now() / 1000);
+    const crumbQ = yfCrumb ? `&crumb=${encodeURIComponent(yfCrumb)}` : '';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&period1=${period1}&period2=${period2}${crumbQ}`;
+    const res = await fetchWithTimeout(url, { headers: yfFetchHeaders(), timeoutMs: 8000 });
+    if (!res.ok) throw new Error(`YF chart error ${res.status} for ${symbol}`);
+    const data: any = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) throw new Error(`No chart data for ${symbol}`);
+    const timestamps: number[] = result.timestamp || [];
+    const q = result.indicators?.quote?.[0] || {};
+    const quotes = timestamps
+        .map((t: number, i: number) => ({
+            date: new Date(t * 1000),
+            open:   q.open?.[i]   ?? null,
+            high:   q.high?.[i]   ?? null,
+            low:    q.low?.[i]    ?? null,
+            close:  q.close?.[i]  ?? null,
+            volume: q.volume?.[i] ?? null,
+        }))
+        .filter((q: any) => q.close !== null);
+    return { meta: result.meta, quotes };
+}
+
+async function yfQuote(symbols: string | string[], timeoutMs = 6000): Promise<any> {
+    await initYFCrumb();
+    const list = Array.isArray(symbols) ? symbols.join(',') : symbols;
+    const crumbQ = yfCrumb ? `&crumb=${encodeURIComponent(yfCrumb)}` : '';
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}${crumbQ}`;
+    const res = await fetchWithTimeout(url, { headers: yfFetchHeaders(), timeoutMs });
+    if (!res.ok) throw new Error(`YF quote error ${res.status}`);
+    const data: any = await res.json();
+    const results: any[] = data?.quoteResponse?.result || [];
+    return Array.isArray(symbols) ? results : (results[0] ?? null);
+}
 import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
 import { SAUDI_STOCKS } from './src/symbols';
-
-// تعطيل schema validation في yahoo-finance2 v3 (يسبب خطأ "did not match expected pattern" للأسهم السعودية)
-yahooFinance.setGlobalConfig({
-    validation: { logErrors: false, logNotices: false }
-});
 
 // --- إعدادات التليجرام ---
 const cleanToken = (t: string) => {
@@ -288,12 +367,12 @@ function calculateStochasticRSI(closes: number[], rsiPeriod = 14, stochPeriod = 
 async function analyzeStock(symbol: string) {
     try {
         const period1 = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
-        const result = await yahooFinance.chart(symbol, { interval: '5m', period1 }, { validateResult: false }) as any;
-        
+        const result = await yfChart(symbol, '5m', period1);
+
         if (!result || !result.quotes || result.quotes.length < 50) {
             // Fallback for ticker tape
             try {
-                const quote = await yahooFinance.quote(symbol, {}, { validateResult: false }) as any;
+                const quote = await yfQuote(symbol);
                 if (quote) {
                     const stockData = {
                         symbol,
@@ -580,7 +659,7 @@ async function startFullScan() {
     
     // جلب بيانات المؤشر العام (TASI)
     try {
-        const tasiResult = await yahooFinance.quote('^TASI', {}, { validateResult: false }) as any;
+        const tasiResult = await yfQuote('^TASI');
         if (tasiResult) {
             scanStatus.marketIndex = {
                 price: tasiResult.regularMarketPrice,
@@ -607,7 +686,7 @@ async function startFullScan() {
         const chunk = symbols.slice(i, i + quoteChunkSize);
         try {
             console.log(`   - جلب الحزمة ${Math.floor(i / quoteChunkSize) + 1}...`);
-            const quotes = await yahooFinance.quote(chunk, {}, { validateResult: false }) as any;
+            const quotes = await yfQuote(chunk);
             
             if (!Array.isArray(quotes)) {
                 console.warn(`⚠️ [${new Date().toLocaleTimeString()}] استجابة غير متوقعة من ياهو فاينانس (ليست مصفوفة)`);
@@ -640,7 +719,7 @@ async function startFullScan() {
             console.log(`   🔄 محاولة جلب الأسهم بشكل فردي لهذه الحزمة...`);
             for (const s of chunk) {
                 try {
-                    const q = await yahooFinance.quote(s, {}, { validateResult: false }) as any;
+                    const q = await yfQuote(s);
                     if (q && q.symbol) {
                         const stockData = {
                             symbol: q.symbol,
@@ -903,7 +982,7 @@ async function startServer() {
         console.log(`📈 [${new Date().toLocaleTimeString()}] جلب تاريخ السهم: ${symbol}`);
         try {
             const period1 = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60); // Last 30 days
-            const result = await yahooFinance.chart(symbol, { interval: '1h', period1 }, { validateResult: false }) as any;
+            const result = await yfChart(symbol, '1h', period1);
             
             if (!result || !result.quotes || result.quotes.length === 0) {
                 console.warn(`⚠️ [${new Date().toLocaleTimeString()}] لا توجد بيانات تاريخية لـ ${symbol}`);
@@ -1104,7 +1183,7 @@ ATR (14): ${atr ?? 'N/A'}
         // اختبار الاتصال بياهو فاينانس عند التشغيل
         try {
             console.log("🧪 اختبار الاتصال بياهو فاينانس (سهم الراجحي 1120.SR)...");
-            const testQuote = await yahooFinance.quote('1120.SR', {}, { validateResult: false }) as any;
+            const testQuote = await yfQuote('1120.SR');
             if (testQuote) {
                 console.log(`✅ نجح الاختبار! السعر الحالي للراجحي: ${testQuote.regularMarketPrice}`);
             }
