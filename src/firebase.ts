@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { getFirestore, collection, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, getDocs, addDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -10,7 +10,19 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 
 // Auth Helpers
-export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
+// Try popup first; if blocked (e.g. mobile / strict browser) fall back to redirect
+export const loginWithGoogle = async () => {
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (err: any) {
+    // popup-blocked or cross-origin-opener-policy → use redirect
+    if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+      return signInWithRedirect(auth, googleProvider);
+    }
+    throw err;
+  }
+};
+export const handleRedirectResult = () => getRedirectResult(auth);
 export const logout = () => signOut(auth);
 
 // Firestore Error Handling

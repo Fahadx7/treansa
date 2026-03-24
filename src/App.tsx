@@ -58,14 +58,15 @@ import {
   ReferenceLine
 } from 'recharts';
 
-import { 
-  auth, 
-  db, 
-  loginWithGoogle, 
-  logout, 
-  onAuthStateChanged, 
-  serverTimestamp, 
-  handleFirestoreError, 
+import {
+  auth,
+  db,
+  loginWithGoogle,
+  handleRedirectResult,
+  logout,
+  onAuthStateChanged,
+  serverTimestamp,
+  handleFirestoreError,
   OperationType,
   FirebaseUser
 } from './firebase';
@@ -1487,6 +1488,11 @@ function App() {
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [marginAccount, setMarginAccount] = useState<MarginAccount | null>(null);
   const [marginPositions, setMarginPositions] = useState<MarginPosition[]>([]);
+
+  // Handle redirect sign-in result (fires once on page load after redirect)
+  useEffect(() => {
+    handleRedirectResult().catch(() => { /* no redirect in progress — ignore */ });
+  }, []);
 
   // Auth Listener
   useEffect(() => {
