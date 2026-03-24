@@ -1,20 +1,54 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Trandsa
 
-# Run and deploy your AI Studio app
+منصة تداول ذكية للسوق السعودي مبنية على:
+- **React + Vite** للواجهة
+- **Express + TypeScript** للـ API والخدمة الخلفية
+- **Firebase Auth / Firestore** للمصادقة والبيانات
+- **Gemini + Telegram + Yahoo Finance** للتحليل والتنبيهات
 
-This contains everything you need to run your app locally.
+## طريقة التشغيل محليًا
 
-View your app in AI Studio: https://ai.studio/apps/34bf63a9-aefc-4316-ab7b-dedb83ef4837
+```bash
+npm install
+npm run dev
+```
 
-## Run Locally
+الخادم المحلي يعمل عبر `server.ts` على المنفذ `3000`، والواجهة تُخدم من نفس التطبيق عبر Vite middleware.
 
-**Prerequisites:**  Node.js
+## متغيرات البيئة المطلوبة
+
+انسخ `.env.example` إلى `.env` ثم عبّئ القيم:
+
+```bash
+GEMINI_API_KEY=
+TELEGRAM_TOKEN=
+TELEGRAM_CHAT_ID=
+```
+
+## البناء
+
+```bash
+npm run build
+```
+
+## النشر الموصى به
+
+هذا المشروع **ليس مناسبًا للنشر على Netlify Functions** بصيغته الحالية، لأن حالة التطبيق والمسح الدوري تحتاج خدمة Node تعمل باستمرار.
+
+المسار الصحيح:
+- انشره كخدمة **Web Service** على **Render**
+- استخدم `render.yaml` الموجود في المستودع
+- اختر **Starter** أو أعلى إذا كنت تريد أن تبقى الخدمة عاملة للتنبيهات والمسح الدوري
+- أو اضبط يدويًا:
+  - **Build Command:** `npm ci && npm run build`
+  - **Start Command:** `npm run start`
+  - **Health Check Path:** `/api/health`
+
+## ملاحظات
+
+- لا ترفع ملف `.env`
+- تأكد من ضبط قواعد Firebase قبل النشر
+- لا تعتمد على `netlify/functions/api.ts` في الإنتاج لهذا المشروع
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+> ملاحظة تشغيلية: الخطة المجانية في Render لا تصلح هنا إذا كنت تعتمد على المسح الدوري داخل نفس الخدمة، لأن خدمات الويب المجانية تدخل في وضع السكون بعد فترة خمول.
