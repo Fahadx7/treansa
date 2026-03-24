@@ -303,7 +303,7 @@ const LogoGenerator = () => {
   const generateLogo = async () => {
     setIsGenerating(true);
     try {
-      const response = await fetch('/api/ai-logo', { method: 'POST' });
+      const response = await fetch('/.netlify/functions/api/ai-logo', { method: 'POST' });
       const data = await response.json();
       if (data.success && data.images?.length) {
         setLogos(prev => [...data.images, ...prev]);
@@ -477,7 +477,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const handleAIAnalysis = async () => {
     setIsAnalyzing(true);
     try {
-      const response = await fetch('/api/ai-analysis', {
+      const response = await fetch('/.netlify/functions/api/ai-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -508,7 +508,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
     setLoadingNews(true);
     setNewsError(null);
     try {
-      const response = await fetch('/api/ai-news', {
+      const response = await fetch('/.netlify/functions/api/ai-news', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol: stock.symbol, companyName: stock.companyName })
@@ -562,7 +562,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
       setLoadingHistory(true);
       setHistoryError(null);
       try {
-        const res = await fetch(`/api/history/${stock.symbol}`);
+        const res = await fetch(`/.netlify/functions/api/history/${stock.symbol}`);
         const data = await res.json();
         if (data.success && data.history && data.history.length > 0) {
           setHistory(data.history);
@@ -587,7 +587,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
 
     setIsSettingAlert(true);
     try {
-      const response = await fetch('/api/alerts', {
+      const response = await fetch('/.netlify/functions/api/alerts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1210,7 +1210,7 @@ const FeedbackModal = ({ onClose, user }: { onClose: () => void, user: FirebaseU
     setIsSending(true);
     try {
       // 1. Send to API (for Telegram)
-      await fetch('/api/feedback', {
+      await fetch('/.netlify/functions/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, type, message })
@@ -1692,7 +1692,7 @@ function App() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/status');
+      const res = await fetch('/.netlify/functions/api/status');
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       setStatus(data);
@@ -1709,7 +1709,7 @@ function App() {
     setIsTestingTelegram(true);
     setTelegramStatus({ type: null, message: '' });
     try {
-      const response = await fetch('/api/test-telegram', { method: 'POST' });
+      const response = await fetch('/.netlify/functions/api/test-telegram', { method: 'POST' });
       const data = await response.json();
       if (data.success) {
         setTelegramStatus({ 
@@ -1736,7 +1736,7 @@ function App() {
 
   const startScan = async () => {
     try {
-      const response = await fetch('/api/scan', { method: 'POST' });
+      const response = await fetch('/.netlify/functions/api/scan', { method: 'POST' });
       const data = await response.json();
       if (data.success) {
         setTelegramStatus({ type: 'success', message: '🚀 بدأ المسح اليدوي للسوق...' });
