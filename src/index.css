@@ -1,25 +1,166 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap');
 
 @theme {
-  --color-app-bg: var(--bg);
-  --color-app-surface: var(--surface);
-  --color-app-border: var(--border);
-  --color-app-text: var(--text);
+  --color-app-bg:         var(--bg);
+  --color-app-surface:    var(--surface);
+  --color-app-border:     var(--border);
+  --color-app-text:       var(--text);
   --color-app-text-muted: var(--text-muted);
 }
 
+/* ─── Light mode tokens ─── */
 :root {
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --text-muted: #64748b;
+  --bg:          #f0f4f8;
+  --surface:     #ffffff;
+  --border:      rgba(0, 0, 0, 0.07);
+  --text:        #0f172a;
+  --text-muted:  #8899aa;
+  --positive:    #00d4aa;
+  --negative:    #ff4757;
+  --neutral:     #a0aec0;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 14px rgba(0,0,0,0.05);
+  --shadow-hover: 0 6px 24px rgba(0,0,0,0.11), 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-modal: 0 24px 80px rgba(0,0,0,0.18);
 }
 
+/* ─── Dark mode tokens ─── */
 .dark {
-  --bg: #09090b;
-  --surface: #18181b;
-  --border: #27272a;
-  --text: #f8fafc;
-  --text-muted: #a1a1aa;
+  --bg:          #0a0e1a;
+  --surface:     #111827;
+  --border:      rgba(255, 255, 255, 0.08);
+  --text:        #e8edf5;
+  --text-muted:  #8899aa;
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.35);
+  --shadow-hover: 0 6px 28px rgba(0,0,0,0.55);
+  --shadow-modal: 0 28px 80px rgba(0,0,0,0.7);
+}
+
+/* ─── Base ─── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: 'Tajawal', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Smooth transitions on all interactive elements */
+button, a, [role="button"],
+input, select, textarea {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.15s ease !important;
+}
+
+/* ─── Stat Card ─── */
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.stat-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+
+/* RTL colored right border per Tailwind/Arabic direction */
+.stat-card.accent-positive { border-right: 3px solid var(--positive); }
+.stat-card.accent-negative { border-right: 3px solid var(--negative); }
+.stat-card.accent-amber    { border-right: 3px solid #f59e0b; }
+.stat-card.accent-blue     { border-right: 3px solid #3b82f6; }
+.stat-card.accent-slate    { border-right: 3px solid #64748b; }
+
+/* Subtle gradient tint per accent in dark mode */
+.dark .stat-card.accent-positive { background: linear-gradient(145deg, #111827 0%, rgba(0,212,170,0.05) 100%); }
+.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #111827 0%, rgba(245,158,11,0.05) 100%); }
+.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #111827 0%, rgba(59,130,246,0.05) 100%); }
+
+/* ─── Glassmorphism badge ─── */
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  backdrop-filter: blur(8px) saturate(160%);
+  -webkit-backdrop-filter: blur(8px) saturate(160%);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  letter-spacing: 0.01em;
+}
+
+.glass-badge.emerald { background: rgba(0,212,170,0.12); border-color: rgba(0,212,170,0.25); color: #00d4aa; }
+.glass-badge.amber   { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.25); color: #f59e0b; }
+.glass-badge.blue    { background: rgba(59,130,246,0.12);  border-color: rgba(59,130,246,0.25);  color: #60a5fa; }
+.glass-badge.slate   { background: rgba(100,116,139,0.10); border-color: rgba(100,116,139,0.20); color: #94a3b8; }
+
+/* ─── Table zebra striping ─── */
+.zebra-row:nth-child(odd)  { background: transparent; }
+.zebra-row:nth-child(even) { background: rgba(128,128,128,0.04); }
+.dark .zebra-row:nth-child(even) { background: rgba(255,255,255,0.025); }
+.zebra-row { transition: background-color 0.15s ease !important; }
+.zebra-row:hover { background: rgba(0,212,170,0.05) !important; }
+.dark .zebra-row:hover { background: rgba(0,212,170,0.06) !important; }
+
+/* ─── Tabular numbers ─── */
+.num { font-variant-numeric: tabular-nums; }
+
+/* ─── Positive / Negative colours ─── */
+.text-positive { color: var(--positive) !important; }
+.text-negative { color: var(--negative) !important; }
+.bg-positive   { background-color: var(--positive) !important; }
+.bg-negative   { background-color: var(--negative) !important; }
+
+/* ─── Scrollbars ─── */
+::-webkit-scrollbar              { width: 4px; height: 4px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        { background: rgba(128,128,128,0.22); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover  { background: rgba(128,128,128,0.38); }
+
+.custom-scrollbar::-webkit-scrollbar       { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.18); border-radius: 2px; }
+
+/* ─── Focus ring ─── */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--positive);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ─── Ticker tape ─── */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-33.333%); }
+}
+
+/* ─── Modal shadow ─── */
+.modal-shadow { box-shadow: var(--shadow-modal); }
+
+/* ─── Header blur ─── */
+.header-blur {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
