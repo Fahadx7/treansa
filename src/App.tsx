@@ -94,6 +94,8 @@ import {
   getAllSymbols,
   loadCache,
   saveCache,
+  scoreStock,
+  type StockScore,
 } from './marketData';
 
 const List = (ReactWindow as any).FixedSizeList;
@@ -377,80 +379,130 @@ const LogoGenerator = () => {
     </div>
   );
 };
-const MiniTable = ({ title, icon: Icon, data, type, onStockClick }: { 
-  title: string, 
-  icon: any, 
-  data: any[], 
-  type: 'price' | 'liquidity' | 'wave', 
-  onStockClick: (stock: any) => void 
-}) => (
-  <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex flex-col h-[420px] shadow-sm dark:shadow-none">
-    <div className="p-4 border-b border-app-border bg-app-surface/50 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <div className={`p-1.5 rounded-lg ${title.includes('ارتفاع') || title.includes('دخول') || title.includes('موجات') ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
-          <Icon className={`w-4 h-4 ${title.includes('ارتفاع') || title.includes('دخول') || title.includes('موجات') ? 'text-emerald-500' : 'text-rose-500'}`} />
-        </div>
-        <h3 className="text-sm font-bold tracking-tight">{title}</h3>
+// ---- RSI mini-gauge ----
+const RsiGauge = ({ value }: { value: number }) => {
+  const pct   = Math.min(100, Math.max(0, value));
+  const color = value > 70 ? 'bg-rose-500' : value < 30 ? 'bg-emerald-400' : 'bg-blue-400';
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-16 h-1.5 bg-app-border rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-[10px] text-app-text-muted font-mono uppercase">Top 10</span>
+      <span className={`text-[10px] font-mono ${value > 70 ? 'text-rose-500' : value < 30 ? 'text-emerald-400' : 'text-app-text-muted'}`}>
+        {value.toFixed(0)}
+      </span>
     </div>
-    <div className="flex-1 overflow-y-auto custom-scrollbar">
-      <table className="w-full text-right text-xs">
-        <thead className="sticky top-0 bg-app-surface/90 backdrop-blur-sm text-app-text-muted h-9 border-b border-app-border">
-          <tr>
-            <th className="px-4 font-semibold">الشركة</th>
-            <th className="px-4 font-semibold">السعر</th>
-            <th className="px-4 font-semibold">{type === 'price' ? 'التغير' : type === 'liquidity' ? 'السيولة' : 'الموجة'}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-app-border">
-          {data.map((item, i) => (
-            <tr 
-              key={i} 
-              className="hover:bg-app-bg/50 transition-colors h-11 group cursor-pointer"
+  );
+};
+
+// ---- Score badge ----
+const ScoreBadge = ({ score }: { score: StockScore }) => {
+  const bg: Record<string, string> = {
+    emerald: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    amber:   'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    blue:    'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    slate:   'bg-slate-500/10 text-slate-400 border-slate-500/20',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${bg[score.color]}`}>
+      <span>{score.total}/6</span>
+    </span>
+  );
+};
+
+const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emerald' }: {
+  title: string;
+  icon: any;
+  data: any[];
+  type: 'price' | 'liquidity' | 'wave';
+  onStockClick: (stock: any) => void;
+  accent?: 'emerald' | 'rose' | 'amber';
+}) => {
+  const accentCls = {
+    emerald: { icon: 'bg-emerald-500/10 text-emerald-500', border: 'border-emerald-500/20' },
+    rose:    { icon: 'bg-rose-500/10 text-rose-500',       border: 'border-rose-500/20'    },
+    amber:   { icon: 'bg-amber-500/10 text-amber-500',     border: 'border-amber-500/20'   },
+  }[accent];
+
+  return (
+    <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex flex-col h-[440px] shadow-sm dark:shadow-none">
+      {/* Header */}
+      <div className={`p-4 border-b border-app-border flex items-center justify-between bg-gradient-to-l from-transparent`}>
+        <div className="flex items-center gap-2.5">
+          <div className={`p-1.5 rounded-lg ${accentCls.icon}`}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <h3 className="text-sm font-bold tracking-tight">{title}</h3>
+        </div>
+        <span className="text-[10px] text-app-text-muted border border-app-border px-2 py-0.5 rounded-full font-mono">
+          TOP 10
+        </span>
+      </div>
+
+      {/* Column headers */}
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-4 py-2 text-[10px] font-semibold text-app-text-muted uppercase tracking-wider border-b border-app-border bg-app-bg/30">
+        <span>الشركة</span>
+        <span className="text-center">RSI</span>
+        <span className="text-center">{type === 'price' ? 'التغير' : type === 'liquidity' ? 'السيولة' : 'الموجة'}</span>
+        <span className="text-center">قوة</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-app-border">
+        {data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-app-text-muted">
+            <Loader2 className="w-5 h-5 animate-spin opacity-40" />
+            <span className="text-xs italic">جاري التحليل...</span>
+          </div>
+        ) : data.map((item, i) => {
+          const score = scoreStock(item);
+          return (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-4 py-2.5 hover:bg-app-bg/60 transition-colors cursor-pointer group"
               onClick={() => onStockClick(item)}
             >
-              <td className="px-4">
-                <div className="font-bold text-app-text group-hover:text-emerald-500 transition-colors">{item.companyName || '---'}</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-app-text-muted font-mono">{item.symbol}</span>
-                  {item.wave && item.wave !== "غير محدد" && type !== 'wave' && (
-                    <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1 rounded border border-amber-500/20">
-                      {item.wave.split(' ')[1] || item.wave}
-                    </span>
-                  )}
+              {/* Company */}
+              <div className="min-w-0">
+                <div className="font-bold text-[12px] text-app-text group-hover:text-emerald-400 transition-colors truncate">
+                  {item.companyName || '---'}
                 </div>
-              </td>
-              <td className="px-4 font-mono text-app-text-muted">{item.price?.toFixed(2) || '---'}</td>
-              <td className={`px-4 font-mono font-bold ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[10px] text-app-text-muted font-mono">{item.symbol?.replace('.SR','')}</span>
+                  <span className={`text-[10px] font-mono ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {item.price?.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* RSI gauge */}
+              <div className="flex justify-center">
+                <RsiGauge value={item.rsi ?? 50} />
+              </div>
+
+              {/* Primary metric */}
+              <div className={`text-right text-xs font-bold font-mono ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                 {type === 'wave' ? (
-                  <span className="text-[10px] text-amber-500 font-medium text-left block">{item.wave}</span>
+                  <span className="text-[10px] text-amber-400 font-medium max-w-[80px] block truncate text-left">
+                    {item.wave}
+                  </span>
                 ) : type === 'price' ? (
-                  <span className="flex items-center justify-end gap-1">
-                    {item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%
-                  </span>
+                  <span>{item.change >= 0 ? '+' : ''}{item.change?.toFixed(2)}%</span>
                 ) : (
-                  <span className="flex items-center justify-end gap-1">
-                    <RefreshCw className="w-3 h-3 opacity-50" />
-                    {item.volumeRatio?.toFixed(1)}x
-                  </span>
+                  <span className="text-blue-400">{item.volumeRatio?.toFixed(1)}x</span>
                 )}
-              </td>
-            </tr>
-          ))}
-          {data.length === 0 && (
-            <tr>
-              <td colSpan={3} className="p-12 text-center">
-                <Loader2 className="w-5 h-5 text-app-text-muted animate-spin mx-auto mb-2" />
-                <div className="text-app-text-muted italic text-xs">جاري تحليل البيانات...</div>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+              </div>
+
+              {/* Score badge */}
+              <div className="flex justify-center">
+                <ScoreBadge score={score} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: { 
   stock: StockStats, 
@@ -665,18 +717,66 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
             <div className="p-6 space-y-6">
               {activeTab === 'analysis' && (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-app-bg/50 rounded-2xl border border-app-border">
-                      <p className="text-xs text-app-text-muted mb-1">السعر الحالي</p>
-                      <p className="text-2xl font-bold text-app-text">{stock.price.toFixed(2)}</p>
+                  {/* Price + change + score header */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-4 bg-app-bg/50 rounded-2xl border border-app-border col-span-1">
+                      <p className="text-[10px] text-app-text-muted mb-1">السعر الحالي</p>
+                      <p className="text-2xl font-bold font-mono text-app-text">{stock.price.toFixed(2)}</p>
+                      <p className="text-[10px] text-app-text-muted mt-0.5">ريال</p>
                     </div>
-                    <div className="p-4 bg-app-bg/50 rounded-2xl border border-app-border">
-                      <p className="text-xs text-app-text-muted mb-1">التغيير</p>
+                    <div className={`p-4 rounded-2xl border col-span-1 ${stock.change >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-rose-500/5 border-rose-500/20'}`}>
+                      <p className="text-[10px] text-app-text-muted mb-1">التغيير</p>
                       <p className={`text-2xl font-bold ${stock.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                         {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
                       </p>
+                      <p className="text-[10px] text-app-text-muted mt-0.5">اليوم</p>
                     </div>
+                    {(() => {
+                      const sc = scoreStock(ds, liveIndicators ?? undefined);
+                      const bg: Record<string, string> = {
+                        emerald: 'bg-emerald-500/5 border-emerald-500/20',
+                        amber:   'bg-amber-500/5 border-amber-500/20',
+                        blue:    'bg-blue-500/5 border-blue-500/20',
+                        slate:   'bg-slate-500/5 border-slate-500/20',
+                      };
+                      const txt: Record<string, string> = {
+                        emerald: 'text-emerald-400',
+                        amber:   'text-amber-400',
+                        blue:    'text-blue-400',
+                        slate:   'text-slate-400',
+                      };
+                      return (
+                        <div className={`p-4 rounded-2xl border col-span-1 ${bg[sc.color]}`}>
+                          <p className="text-[10px] text-app-text-muted mb-1">قوة الإشارة</p>
+                          <p className={`text-2xl font-bold font-mono ${txt[sc.color]}`}>{sc.total}<span className="text-sm text-app-text-muted">/6</span></p>
+                          <p className={`text-[10px] mt-0.5 ${txt[sc.color]}`}>{sc.label}</p>
+                        </div>
+                      );
+                    })()}
                   </div>
+
+                  {/* Score reasons breakdown */}
+                  {(() => {
+                    const sc = scoreStock(ds, liveIndicators ?? undefined);
+                    if (!sc.reasons.length) return null;
+                    return (
+                      <div className="p-3 bg-app-bg/30 rounded-xl border border-app-border space-y-1.5">
+                        <p className="text-[10px] font-semibold text-app-text-muted uppercase tracking-wider mb-2">عوامل الإشارة المتوافقة</p>
+                        {sc.reasons.map((r, i) => (
+                          <div key={i} className="flex items-center gap-2 text-[11px]">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                            <span className="text-app-text">{r}</span>
+                          </div>
+                        ))}
+                        {Array.from({ length: 6 - sc.reasons.length }).map((_, i) => (
+                          <div key={`missing-${i}`} className="flex items-center gap-2 text-[11px] opacity-30">
+                            <div className="w-3 h-3 rounded-full border border-app-border shrink-0" />
+                            <span className="text-app-text-muted">غير مكتمل</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   <div className="space-y-4">
                     <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
@@ -847,38 +947,65 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                         </div>
                       </div>
 
-                      {/* RSI & Wave & ATR & StochRSI */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
-                          <p className="text-[10px] text-app-text-muted mb-1">RSI (14)</p>
-                          <p className={`text-lg font-bold ${ds.rsi > 70 ? 'text-rose-500' : ds.rsi < 30 ? 'text-emerald-500' : 'text-app-text'}`}>
-                            {ds.rsi.toFixed(1)}
-                          </p>
-                          <p className="text-[9px] text-app-text-muted mt-0.5">
-                            {ds.rsi > 70 ? 'تشبع شرائي' : ds.rsi < 30 ? 'تشبع بيعي' : 'محايد'}
-                          </p>
+                      {/* RSI full gauge */}
+                      <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-app-text">RSI (14)</span>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ds.rsi > 70 ? 'bg-rose-500/15 text-rose-400' : ds.rsi < 30 ? 'bg-emerald-500/15 text-emerald-400' : ds.rsi >= 45 && ds.rsi <= 70 ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                            {ds.rsi > 70 ? 'تشبع شرائي' : ds.rsi < 30 ? 'تشبع بيعي' : ds.rsi >= 45 ? 'زخم صعودي' : 'محايد'}
+                          </span>
                         </div>
+                        {/* Gauge bar */}
+                        <div className="relative mb-2">
+                          <div className="flex h-3 rounded-full overflow-hidden">
+                            <div className="flex-1 bg-emerald-500/20" />
+                            <div className="flex-1 bg-blue-500/20 border-x border-app-border" />
+                            <div className="flex-1 bg-rose-500/20" />
+                          </div>
+                          <div
+                            className="absolute top-0 w-2.5 h-3 rounded-full bg-white shadow-lg border border-app-border -translate-x-1/2 transition-all"
+                            style={{ left: `${Math.min(100, Math.max(0, ds.rsi))}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[9px] text-app-text-muted">
+                          <span>0 — تشبع بيعي</span>
+                          <span className="font-mono font-bold text-app-text text-sm">{ds.rsi.toFixed(1)}</span>
+                          <span>100 — تشبع شرائي</span>
+                        </div>
+                      </div>
+
+                      {/* Stoch RSI + ATR + Elliott */}
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
                           <p className="text-[10px] text-app-text-muted mb-1">Stoch RSI</p>
                           {ds.stochRsi ? (
                             <>
-                              <p className={`text-lg font-bold ${ds.stochRsi.k > 80 ? 'text-rose-500' : ds.stochRsi.k < 20 ? 'text-emerald-500' : 'text-app-text'}`}>
+                              <p className={`text-lg font-bold font-mono ${ds.stochRsi.k > 80 ? 'text-rose-500' : ds.stochRsi.k < 20 ? 'text-emerald-500' : 'text-app-text'}`}>
                                 K: {ds.stochRsi.k.toFixed(1)}
                               </p>
-                              <p className="text-[9px] text-app-text-muted">D: {ds.stochRsi.d.toFixed(1)}</p>
+                              <p className={`text-[10px] mt-0.5 ${ds.stochRsi.k > ds.stochRsi.d ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                D: {ds.stochRsi.d.toFixed(1)} {ds.stochRsi.k > ds.stochRsi.d ? '▲' : '▼'}
+                              </p>
                             </>
                           ) : <p className="text-sm text-app-text-muted">---</p>}
                         </div>
-                        {ds.atr && ds.atr > 0 && (
+                        {ds.atr && ds.atr > 0 ? (
                           <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border">
+                            <p className="text-[10px] text-app-text-muted mb-1">ATR (14) — التذبذب</p>
+                            <p className="text-lg font-bold font-mono text-blue-400">{ds.atr.toFixed(3)}</p>
+                            <p className="text-[10px] text-app-text-muted mt-0.5">وقف ×1.5: <span className="text-rose-400 font-mono">{(stock.price - ds.atr * 1.5).toFixed(2)}</span></p>
+                          </div>
+                        ) : (
+                          <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border opacity-50">
                             <p className="text-[10px] text-app-text-muted mb-1">ATR (14)</p>
-                            <p className="text-lg font-bold text-blue-400">{ds.atr.toFixed(3)}</p>
-                            <p className="text-[9px] text-app-text-muted">وقف مقترح: {(stock.price - ds.atr * 1.5).toFixed(2)}</p>
+                            <p className="text-sm text-app-text-muted">---</p>
                           </div>
                         )}
-                        <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border col-span-1">
-                          <p className="text-[10px] text-app-text-muted mb-1">موجة إليوت</p>
-                          <p className="text-xs font-bold text-amber-500 truncate">{ds.wave || 'غير محدد'}</p>
+                        <div className="p-4 bg-app-surface/30 rounded-2xl border border-app-border col-span-2">
+                          <p className="text-[10px] text-app-text-muted mb-2">موجة إليوت</p>
+                          <p className={`text-sm font-bold ${ds.wave && ds.wave !== 'غير محدد' ? 'text-amber-400' : 'text-app-text-muted'}`}>
+                            {ds.wave || 'غير محدد'}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -2252,13 +2379,82 @@ function App() {
           </motion.div>
         </div>
 
+        {/* رادار الإشارات — stocks ranked by confluence score from available data */}
+        {(() => {
+          const stocks = status?.tickerData ?? [];
+          const radar = [...stocks]
+            .map(s => ({ ...s, _score: scoreStock(s) }))
+            .filter(s => s._score.total >= 2 && s.change > 0)
+            .sort((a, b) => b._score.total - a._score.total || b.volumeRatio - a.volumeRatio)
+            .slice(0, 8);
+          if (!radar.length) return null;
+          return (
+            <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-5 py-3.5 border-b border-app-border flex items-center justify-between bg-gradient-to-l from-emerald-500/5 to-transparent">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-emerald-500/10 rounded-lg">
+                    <Radar className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold">رادار الإشارات</h3>
+                    <p className="text-[10px] text-app-text-muted">أعلى الأسهم تقاطعاً في المؤشرات الفنية</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-app-text-muted border border-app-border rounded-full px-3 py-1">
+                  <Activity className="w-3 h-3 text-emerald-500" />
+                  <span>{radar.length} إشارة</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x-reverse divide-x divide-app-border divide-y sm:divide-y-0">
+                {radar.map((s, i) => (
+                  <div
+                    key={i}
+                    onClick={() => setSelectedStock(s)}
+                    className="p-4 hover:bg-app-bg/60 cursor-pointer transition-colors group"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <div className="text-[11px] font-bold text-app-text group-hover:text-emerald-400 transition-colors truncate max-w-[100px]">
+                          {s.companyName}
+                        </div>
+                        <div className="text-[10px] text-app-text-muted font-mono">{s.symbol?.replace('.SR','')}</div>
+                      </div>
+                      <ScoreBadge score={s._score} />
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <div className="text-lg font-bold font-mono text-app-text">{s.price?.toFixed(2)}</div>
+                        <div className={`text-[11px] font-bold ${s.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {s.change >= 0 ? '+' : ''}{s.change?.toFixed(2)}%
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-blue-400 font-mono">{s.volumeRatio?.toFixed(1)}x</div>
+                        <div className="text-[9px] text-app-text-muted">سيولة</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 space-y-0.5">
+                      {s._score.reasons.slice(0, 2).map((r: string, j: number) => (
+                        <div key={j} className="text-[9px] text-emerald-500/70 flex items-center gap-1">
+                          <div className="w-1 h-1 rounded-full bg-emerald-500/50 shrink-0" />
+                          {r}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Market Overview Tables */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-          <MiniTable title="الأكثر ارتفاعاً" icon={TrendingUp} data={status?.topGainers || []} type="price" onStockClick={setSelectedStock} />
-          <MiniTable title="الأكثر انخفاضاً" icon={TrendingUp} data={status?.topLosers || []} type="price" onStockClick={setSelectedStock} />
-          <MiniTable title="دخول سيولة" icon={CheckCircle2} data={status?.liquidityEntry || []} type="liquidity" onStockClick={setSelectedStock} />
-          <MiniTable title="خروج سيولة" icon={AlertCircle} data={status?.liquidityExit || []} type="liquidity" onStockClick={setSelectedStock} />
-          <MiniTable title="تحليل الموجات" icon={Zap} data={status?.waveStocks || []} type="wave" onStockClick={setSelectedStock} />
+          <MiniTable title="الأكثر ارتفاعاً" icon={TrendingUp}   data={status?.topGainers    || []} type="price"     onStockClick={setSelectedStock} accent="emerald" />
+          <MiniTable title="الأكثر انخفاضاً" icon={TrendingDown}  data={status?.topLosers     || []} type="price"     onStockClick={setSelectedStock} accent="rose"    />
+          <MiniTable title="دخول سيولة"      icon={CheckCircle2} data={status?.liquidityEntry || []} type="liquidity" onStockClick={setSelectedStock} accent="emerald" />
+          <MiniTable title="خروج سيولة"      icon={AlertCircle}  data={status?.liquidityExit  || []} type="liquidity" onStockClick={setSelectedStock} accent="rose"    />
+          <MiniTable title="موجات إليوت"     icon={Zap}          data={status?.waveStocks     || []} type="wave"      onStockClick={setSelectedStock} accent="amber"   />
         </div>
 
         {selectedStock && (
