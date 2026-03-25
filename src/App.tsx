@@ -431,10 +431,10 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
       </div>
 
       {/* Column headers — sticky */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-4 py-2.5 sticky top-0 z-10 border-b border-app-border bg-app-surface/95 backdrop-blur-sm"
+      <div className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_80px_auto_auto] gap-x-2 px-3 py-2.5 sticky top-0 z-10 border-b border-app-border bg-app-surface/95 backdrop-blur-sm"
            style={{ fontSize: 11, letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
         <span>الشركة</span>
-        <span className="text-center">RSI</span>
+        <span className="hidden sm:block text-center">RSI</span>
         <span className="text-center">{type === 'price' ? 'التغير' : type === 'liquidity' ? 'السيولة' : 'الموجة'}</span>
         <span className="text-center">قوة</span>
       </div>
@@ -451,12 +451,13 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
           return (
             <div
               key={i}
-              className="zebra-row grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-4 py-2.5 cursor-pointer group"
+              className="zebra-row grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_80px_auto_auto] gap-x-2 items-center px-3 py-2 cursor-pointer group"
               onClick={() => onStockClick(item)}
             >
-              {/* Company */}
+              {/* Company — full name, wraps to 2 lines */}
               <div className="min-w-0">
-                <div className="font-bold truncate group-hover:text-[#00d4aa] transition-colors" style={{ fontSize: 13, color: 'var(--text)' }}>
+                <div className="font-bold leading-snug line-clamp-2 group-hover:text-[#00d4aa] transition-colors"
+                     style={{ fontSize: 13, color: 'var(--text)' }}>
                   {item.companyName || '---'}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -467,15 +468,15 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
                 </div>
               </div>
 
-              {/* RSI gauge */}
-              <div className="flex justify-center">
+              {/* RSI gauge — hidden on mobile */}
+              <div className="hidden sm:flex justify-center">
                 <RsiGauge value={item.rsi ?? 50} />
               </div>
 
               {/* Primary metric */}
               <div className="text-right num font-bold" style={{ fontSize: 12 }}>
                 {type === 'wave' ? (
-                  <span className="text-amber-400 font-medium max-w-[80px] block truncate text-left" style={{ fontSize: 10 }}>
+                  <span className="text-amber-400 font-medium line-clamp-2 text-left" style={{ fontSize: 10 }}>
                     {item.wave}
                   </span>
                 ) : type === 'price' ? (
@@ -647,7 +648,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="w-full max-w-lg bg-app-surface border border-app-border rounded-3xl overflow-hidden modal-shadow max-h-[90vh] flex flex-col"
+          className="w-full max-w-lg bg-app-surface border border-app-border rounded-3xl overflow-hidden modal-shadow modal-mobile max-h-[90vh] flex flex-col"
           onClick={e => e.stopPropagation()}
         >
           <div className="p-6 border-b border-app-border flex items-center justify-between bg-app-surface/50">
@@ -1336,7 +1337,7 @@ const FeedbackModal = ({ onClose, user }: { onClose: () => void, user: FirebaseU
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="bg-app-surface border border-app-border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
+          className="bg-app-surface border border-app-border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl modal-mobile"
           onClick={e => e.stopPropagation()}
         >
           <div className="p-6 border-b border-app-border flex items-center justify-between bg-app-surface/50">
@@ -2165,7 +2166,7 @@ function App() {
       </motion.button>
 
       {/* Header */}
-      <header className="border-b border-app-border bg-app-surface/80 backdrop-blur-xl sticky top-0 z-50 transition-colors">
+      <header className="border-b border-app-border bg-app-surface/80 backdrop-blur-xl sticky top-0 z-50 transition-colors safe-top">
         <div className="max-w-7xl mx-auto px-4 h-20 sm:h-16 flex flex-col sm:flex-row items-center justify-between gap-4 py-2 sm:py-0">
           <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
             <div className="flex items-center gap-3">
@@ -2204,6 +2205,10 @@ function App() {
           </div>
           
           <div className="flex items-center gap-4 w-full sm:w-auto justify-center sm:justify-end overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+            <div className="delay-badge shrink-0">
+              <Clock className="w-2.5 h-2.5" />
+              بيانات مؤخرة ~15 دقيقة
+            </div>
             {status?.marketIndex && (
               <div className="flex items-center gap-4 px-3 py-1.5 bg-app-bg/80 border border-emerald-500/30 rounded-xl shadow-lg shadow-emerald-900/10 shrink-0">
                 <div className="flex flex-col">
@@ -2314,7 +2319,7 @@ function App() {
           </div>
         )}
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
           {[
             { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount  || 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
             { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks.length  || 0, iconColor: 'text-amber-500',   delay: 0.07 },
@@ -2368,7 +2373,7 @@ function App() {
                   <span>{radar.length} إشارة</span>
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x-reverse divide-x divide-app-border divide-y sm:divide-y-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-x-reverse divide-x divide-app-border divide-y lg:divide-y-0">
                 {radar.map((s, i) => (
                   <div
                     key={i}
@@ -2412,7 +2417,7 @@ function App() {
         })()}
 
         {/* Market Overview Tables */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           <MiniTable title="الأكثر ارتفاعاً" icon={TrendingUp}   data={status?.topGainers    || []} type="price"     onStockClick={setSelectedStock} accent="emerald" />
           <MiniTable title="الأكثر انخفاضاً" icon={TrendingDown}  data={status?.topLosers     || []} type="price"     onStockClick={setSelectedStock} accent="rose"    />
           <MiniTable title="دخول سيولة"      icon={CheckCircle2} data={status?.liquidityEntry || []} type="liquidity" onStockClick={setSelectedStock} accent="emerald" />
