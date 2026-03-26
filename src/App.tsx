@@ -2835,9 +2835,18 @@ function App() {
           const gainers   = tickers.filter(s => s.change > 0).length;
           const losers    = tickers.filter(s => s.change < 0).length;
           const unchanged = tickers.length - gainers - losers;
-          const price     = tasiData?.price ?? 0;
+          // Fallback: volume-weighted average price of all loaded stocks
+          const stocksPrice = !tasiData && tickers.length > 0
+            ? (() => {
+                const totalVol = tickers.reduce((s, t) => s + (t.volume || 1), 0) || 1;
+                return tickers.reduce((s, t) => s + t.price * (t.volume || 1), 0) / totalVol;
+              })()
+            : 0;
+          const price     = tasiData?.price ?? stocksPrice;
           const chg       = tasiData?.change ?? 0;
-          const chgPct    = tasiData?.changePercent ?? 0;
+          const chgPct    = tasiData?.changePercent ?? (!tasiData && tickers.length > 0
+            ? tickers.reduce((s, t) => s + t.change, 0) / tickers.length
+            : 0);
           const isUp      = chgPct >= 0;
           const hasPrice  = price > 0;
           const hasMkt    = tickers.length > 0;
