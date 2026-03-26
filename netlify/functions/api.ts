@@ -1,7 +1,6 @@
 import express from "express";
 import serverless from "serverless-http";
 import cors from 'cors';
-import { GoogleGenAI, Type } from '@google/genai';
 import { SAUDI_STOCKS } from '../../src/symbols';
 
 // ========= Yahoo Finance direct fetch =========
@@ -309,9 +308,22 @@ async function analyzeStock(symbol: string) {
 
         if (activeTrades[symbol]) activeTrades[symbol].wave = elliottWave;
 
+        // Improved signal conditions: RSI < 30 oversold, > 70 overbought, volume spike, MACD crossover, 52-week signals
+        const isRsiOversold    = rsi < 30;
+        const isRsiOverbought  = rsi > 70;
+        const isMacdBullish    = macdData.histogram > 0 && macdData.macd > macdData.signal;
+        const isVolumeSpike    = volumeRatio > 3;
+
+        const signalLabels: string[] = [];
+        if (isRsiOversold)   signalLabels.push(`RSI تشبع بيعي (${rsi.toFixed(1)})`);
+        if (isRsiOverbought) signalLabels.push(`RSI تشبع شرائي (${rsi.toFixed(1)})`);
+        if (isMacdBullish)   signalLabels.push('MACD تقاطع صاعد');
+        if (isVolumeSpike)   signalLabels.push(`ارتفاع حجم ×${volumeRatio.toFixed(1)}`);
+
         if (bullishScore >= 3 && !activeTrades[symbol]) {
             const atrSL = atr > 0 ? lastClose - (atr * 1.5) : lastClose * 0.97;
-            await sendTelegramMsg(`🚀 *فرصة ذهبية مكتشفة!*\n━━━━━━━━━━━━━━━\n🏢 الشركة: *${companyName}*\n📦 الرمز: \`${symbol}\`\n💰 السعر: \`${lastClose.toFixed(2)}\`\n📈 RSI: \`${rsi.toFixed(1)}\` | Stoch K: \`${stochRsi.k.toFixed(1)}\`\n📊 الحجم: \`${(lastVolume / 1000).toFixed(1)}K\` (${volumeRatio.toFixed(1)}x)\n📉 ATR(14): \`${atr.toFixed(3)}\`\n━━━━━━━━━━━━━━━\n🎯 +3%: \`${(lastClose * 1.03).toFixed(2)}\` | +5%: \`${(lastClose * 1.05).toFixed(2)}\`\n🛑 وقف الخسارة: \`${atrSL.toFixed(2)}\` (1.5× ATR)\n━━━━━━━━━━━━━━━\n⚡️ *رادار صائد الفرص الذكي*`);
+            const signalText = signalLabels.length ? `📡 الإشارات: ${signalLabels.join(' | ')}\n` : '';
+            await sendTelegramMsg(`🚀 *فرصة ذهبية مكتشفة!*\n━━━━━━━━━━━━━━━\n🏢 *${companyName}*  \`${symbol}\`\n💰 السعر: \`${lastClose.toFixed(2)} ر.س\`\n📈 RSI: \`${rsi.toFixed(1)}\` | Stoch K: \`${stochRsi.k.toFixed(1)}\`\n📊 الحجم: \`${(lastVolume / 1000).toFixed(1)}K\` (×${volumeRatio.toFixed(1)})\n${signalText}━━━━━━━━━━━━━━━\n🎯 هدف +3%: \`${(lastClose * 1.03).toFixed(2)}\` | +5%: \`${(lastClose * 1.05).toFixed(2)}\`\n🛑 وقف الخسارة: \`${atrSL.toFixed(2)}\` (ATR×1.5)\n🕐 ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}\n━━━━━━━━━━━━━━━\n⚡ *ترندسا — رادار الفرص الذكي*`);
             activeTrades[symbol] = { symbol, companyName, entryPrice: lastClose, entryTime: new Date().toISOString(), rsi, sma50, wave: elliottWave };
             scanStatus.alerts.unshift({ type: 'entry', symbol, companyName, price: lastClose, wave: elliottWave, time: new Date().toISOString() });
         }
@@ -628,51 +640,185 @@ app.post("/api/ai-analysis", async (req, res) => {
     if (!checkRateLimit(ip + ':ai', 10, 60_000)) return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح." });
     const { symbol, companyName, price, change, rsi, wave, macd, bb, atr, stochRsi: stoch } = req.body;
     if (!symbol || !isValidSaudiSymbol(symbol)) return res.status(400).json({ success: false, error: "رمز السهم غير صالح" });
-    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط في الخادم." });
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ success: false, error: "مفتاح Claude غير مضبوط في الخادم." });
+
+    const rsiNum   = typeof rsi === 'number'    ? rsi    : parseFloat(rsi)    || 50;
+    const atrNum   = typeof atr === 'number'    ? atr    : parseFloat(atr)    || 0;
+    const macdHist = macd?.histogram ?? 0;
+    const bbUpper  = bb?.upper  ?? price;
+    const bbLower  = bb?.lower  ?? price;
+
+    // Derive key signals for the prompt
+    const signals: string[] = [];
+    if (rsiNum < 30) signals.push(`RSI تشبع بيعي (${rsiNum.toFixed(1)})`);
+    else if (rsiNum > 70) signals.push(`RSI تشبع شرائي (${rsiNum.toFixed(1)})`);
+    if (macdHist > 0) signals.push('MACD فوق الخط الإشاري (زخم صاعد)');
+    else if (macdHist < 0) signals.push('MACD تحت الخط الإشاري (زخم هابط)');
+    if (price > bbUpper) signals.push('السعر فوق بولنجر العلوي');
+    else if (price < bbLower) signals.push('السعر تحت بولنجر السفلي');
+    if (wave && wave !== 'غير محدد') signals.push(`موجة إليوت: ${wave}`);
+
+    const prompt = `أنت خبير مالي محترف متخصص في السوق السعودي (تاسي).
+حلل السهم التالي وأعطني توصية بتنسيق JSON فقط — لا نص خارج JSON.
+
+البيانات:
+- الشركة: ${companyName} (${symbol})
+- السعر الحالي: ${price} ريال
+- التغيير: ${typeof change === 'number' ? change.toFixed(2) : change}%
+- RSI(14): ${rsiNum.toFixed(1)}
+- Stoch RSI: K=${stoch?.k?.toFixed(1) ?? 'N/A'} D=${stoch?.d?.toFixed(1) ?? 'N/A'}
+- MACD Histogram: ${macdHist}
+- Bollinger: Upper=${bbUpper} Lower=${bbLower}
+- ATR(14): ${atrNum.toFixed(3)}
+- الإشارات المكتشفة: ${signals.length ? signals.join(' | ') : 'لا إشارات واضحة'}
+
+أعد JSON بهذا الشكل بالضبط:
+{
+  "recommendation": "شراء" | "بيع" | "انتظار",
+  "confidence": 1-100,
+  "summary": "جملة واحدة موجزة",
+  "entry": سعر الدخول المقترح,
+  "target1": الهدف الأول,
+  "target2": الهدف الثاني,
+  "stopLoss": وقف الخسارة,
+  "reasoning": ["سبب 1", "سبب 2", "سبب 3"],
+  "risk": "منخفض" | "متوسط" | "مرتفع"
+}`;
+
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const prompt = `أنت خبير مالي محترف في السوق السعودي (تاسي). حلل السهم التالي وقدم توصية باللغة العربية.
-الشركة: ${companyName} (${symbol}) | السعر: ${price} | التغير: ${change?.toFixed?.(2) ?? change}%
-RSI(14): ${rsi?.toFixed?.(1) ?? rsi} | Stoch RSI: K=${stoch?.k ?? 'N/A'} D=${stoch?.d ?? 'N/A'}
-موجة إليوت: ${wave || 'غير محدد'} | MACD Histogram: ${macd?.histogram ?? 'N/A'}
-BB: Upper=${bb?.upper ?? 'N/A'} Lower=${bb?.lower ?? 'N/A'} | ATR(14): ${atr ?? 'N/A'}
-قدم: 1) الاتجاه المتوقع ومستوى الثقة 2) نقاط الدخول المثالية 3) الأهداف السعرية 4) وقف الخسارة 5) إدارة المخاطر`;
-        const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: [{ parts: [{ text: prompt }] }] });
-        res.json({ success: true, analysis: response.text });
-    } catch (e: any) { res.status(500).json({ success: false, error: "فشل تحليل الذكاء الاصطناعي." }); }
+        const claudeRes = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': process.env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 800,
+                messages: [{ role: 'user', content: prompt }],
+            }),
+            timeoutMs: 15000,
+        });
+        if (!claudeRes.ok) {
+            const errText = await claudeRes.text();
+            throw new Error(`Claude API error ${claudeRes.status}: ${errText.slice(0, 200)}`);
+        }
+        const claudeData: any = await claudeRes.json();
+        const rawText = claudeData?.content?.[0]?.text ?? '';
+        // Extract JSON — Claude may wrap in ```json ... ```
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('لم يُعد Claude استجابة JSON صحيحة');
+        const parsed = JSON.parse(jsonMatch[0]);
+        res.json({ success: true, analysis: parsed });
+    } catch (e: any) {
+        res.status(500).json({ success: false, error: "فشل تحليل الذكاء الاصطناعي: " + (e.message ?? '') });
+    }
 });
+
+// Parse a minimal RSS XML string into { title, link, pubDate, source } items
+function parseRssItems(xml: string, sourceName: string): Array<{ title: string; link: string; pubDate: string; source: string }> {
+    const items: Array<{ title: string; link: string; pubDate: string; source: string }> = [];
+    const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = itemRegex.exec(xml)) !== null) {
+        const block = match[1];
+        const title   = (block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i)?.[1] ?? '').trim();
+        const link    = (block.match(/<link[^>]*>\s*(https?:\/\/[^\s<]+)/i)?.[1] ?? '').trim();
+        const pubDate = (block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i)?.[1] ?? '').trim();
+        if (title && link) items.push({ title, link, pubDate, source: sourceName });
+        if (items.length >= 8) break;
+    }
+    return items;
+}
 
 app.post("/api/ai-news", async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!checkRateLimit(ip + ':ai-news', 5, 60_000)) return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح." });
     const { symbol, companyName } = req.body;
     if (!symbol || !isValidSaudiSymbol(symbol)) return res.status(400).json({ success: false, error: "رمز السهم غير صالح" });
-    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط." });
+
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: [{ parts: [{ text: `ابحث عن آخر الأخبار المتعلقة بشركة ${companyName} (${symbol}) في السوق السعودي. قدم أهم 5 أخبار حديثة بتنسيق JSON فقط.` }] }],
-            config: { tools: [{ googleSearch: {} }], responseMimeType: "application/json", responseSchema: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, summary: { type: Type.STRING }, date: { type: Type.STRING }, source: { type: Type.STRING }, url: { type: Type.STRING } }, required: ["title", "summary", "date", "source", "url"] } } }
-        });
-        try { const newsData = JSON.parse(response.text || "[]"); res.json({ success: true, news: Array.isArray(newsData) ? newsData : [] }); }
-        catch { res.json({ success: true, news: [] }); }
-    } catch (e: any) { res.status(500).json({ success: false, error: "فشل جلب الأخبار." }); }
+        // Fetch RSS from Yahoo Finance + Google News in parallel (no API key needed)
+        const baseSymbol = symbol.replace(/\.SR$/i, '');
+        const encodedName = encodeURIComponent(companyName);
+        const encodedSymbol = encodeURIComponent(symbol);
+
+        const rssUrls = [
+            { url: `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodedSymbol}&region=SA&lang=ar-SA`, source: 'Yahoo Finance' },
+            { url: `https://news.google.com/rss/search?q=${encodedName}+${baseSymbol}+السوق+السعودي&hl=ar&gl=SA&ceid=SA:ar`, source: 'Google News' },
+        ];
+
+        const rssResults = await Promise.allSettled(
+            rssUrls.map(({ url, source }) =>
+                fetchWithTimeout(url, { headers: { 'User-Agent': YF_UA, 'Accept': 'application/rss+xml, application/xml, text/xml' }, timeoutMs: 6000 })
+                    .then(r => r.ok ? r.text() : '')
+                    .then(xml => parseRssItems(xml, source))
+                    .catch(() => [] as ReturnType<typeof parseRssItems>)
+            )
+        );
+
+        const rawItems = rssResults.flatMap(r => r.status === 'fulfilled' ? r.value : []).slice(0, 8);
+
+        if (!rawItems.length) {
+            return res.json({ success: true, news: [] });
+        }
+
+        // Use Claude to summarize + add sentiment (optional — falls back gracefully)
+        let news: any[] = rawItems.map(item => ({
+            title:   item.title,
+            summary: item.title,
+            date:    item.pubDate ? new Date(item.pubDate).toLocaleDateString('ar-SA') : 'حديث',
+            source:  item.source,
+            url:     item.link,
+            sentiment: 'محايد',
+        }));
+
+        if (process.env.ANTHROPIC_API_KEY) {
+            try {
+                const snippets = rawItems.map((it, i) => `${i + 1}. ${it.title}`).join('\n');
+                const claudeRes = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'x-api-key': process.env.ANTHROPIC_API_KEY,
+                        'anthropic-version': '2023-06-01',
+                        'content-type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-haiku-4-5-20251001',
+                        max_tokens: 600,
+                        messages: [{
+                            role: 'user',
+                            content: `لديك هذه العناوين الإخبارية عن شركة ${companyName} (${symbol}):\n${snippets}\n\nأعد JSON array فقط — لا نص خارجه — بهذا الشكل (عنصر لكل خبر بنفس الترتيب):\n[{"summary":"ملخص جملة واحدة","sentiment":"إيجابي"|"سلبي"|"محايد"}]`,
+                        }],
+                    }),
+                    timeoutMs: 12000,
+                });
+                if (claudeRes.ok) {
+                    const cd: any = await claudeRes.json();
+                    const raw = cd?.content?.[0]?.text ?? '';
+                    const arrMatch = raw.match(/\[[\s\S]*\]/);
+                    if (arrMatch) {
+                        const enriched: any[] = JSON.parse(arrMatch[0]);
+                        news = news.map((item, i) => ({
+                            ...item,
+                            summary:   enriched[i]?.summary   ?? item.summary,
+                            sentiment: enriched[i]?.sentiment ?? item.sentiment,
+                        }));
+                    }
+                }
+            } catch { /* Claude enrichment failed — use raw titles */ }
+        }
+
+        res.json({ success: true, news });
+    } catch (e: any) {
+        res.status(500).json({ success: false, error: "فشل جلب الأخبار." });
+    }
 });
 
-app.post("/api/ai-logo", async (req, res) => {
-    const ip = req.ip || 'unknown';
-    if (!checkRateLimit(ip + ':logo', 3, 300_000)) return res.status(429).json({ success: false, error: "يمكنك توليد 3 شعارات كل 5 دقائق فقط." });
-    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط." });
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const response = await ai.models.generateContent({ model: 'gemini-2.0-flash-preview-image-generation', contents: [{ parts: [{ text: "A professional modern logo for a smart trading platform named 'trandsa'. Stylized upward trend line, AI elements, emerald green and deep blue. Minimalist, white background, vector style." }] }], config: { responseModalities: ['TEXT', 'IMAGE'] } });
-        const images: string[] = [];
-        for (const part of (response.candidates?.[0]?.content?.parts ?? [])) {
-            if ((part as any).inlineData) images.push(`data:image/png;base64,${(part as any).inlineData.data}`);
-        }
-        res.json({ success: true, images });
-    } catch (e: any) { res.status(500).json({ success: false, error: "فشل توليد الشعار." }); }
+app.post("/api/ai-logo", (_req, res) => {
+    // Logo generation endpoint — currently unavailable
+    res.status(503).json({ success: false, error: "توليد الشعارات غير متاح حالياً." });
 });
 
 export const handler = serverless(app);

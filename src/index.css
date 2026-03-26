@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap');
 
 @theme {
   --color-app-bg:         var(--bg);
@@ -9,40 +8,50 @@
   --color-app-text-muted: var(--text-muted);
 }
 
-/* ─── Light mode tokens ─── */
+/* ─── Light mode tokens (Bloomberg-inspired light) ─── */
 :root {
   --bg:          #f0f4f8;
   --surface:     #ffffff;
   --border:      rgba(0, 0, 0, 0.07);
   --text:        #0f172a;
-  --text-muted:  #8899aa;
-  --positive:    #00d4aa;
-  --negative:    #ff4757;
+  --text-muted:  #637898;
+  --positive:    #00c896;
+  --negative:    #ff3d5a;
   --neutral:     #a0aec0;
+  --accent-blue: #3b82f6;
   --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 14px rgba(0,0,0,0.05);
   --shadow-hover: 0 6px 24px rgba(0,0,0,0.11), 0 2px 8px rgba(0,0,0,0.06);
   --shadow-modal: 0 24px 80px rgba(0,0,0,0.18);
 }
 
-/* ─── Dark mode tokens ─── */
+/* ─── Dark mode tokens (Bloomberg Terminal) ─── */
 .dark {
-  --bg:          #0a0e1a;
-  --surface:     #111827;
-  --border:      rgba(255, 255, 255, 0.08);
-  --text:        #e8edf5;
-  --text-muted:  #8899aa;
-  --shadow-card: 0 1px 4px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.35);
-  --shadow-hover: 0 6px 28px rgba(0,0,0,0.55);
-  --shadow-modal: 0 28px 80px rgba(0,0,0,0.7);
+  --bg:          #060b14;
+  --surface:     #0d1421;
+  --border:      #1e2d40;
+  --text:        #e8f0fe;
+  --text-muted:  #637898;
+  --positive:    #00c896;
+  --negative:    #ff3d5a;
+  --neutral:     #637898;
+  --accent-blue: #4d9fec;
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.7), 0 4px 20px rgba(0,0,0,0.5);
+  --shadow-hover: 0 6px 32px rgba(0,0,0,0.7);
+  --shadow-modal: 0 28px 80px rgba(0,0,0,0.85);
 }
 
 /* ─── Base ─── */
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
-  font-family: 'Tajawal', system-ui, -apple-system, sans-serif;
+  font-family: 'IBM Plex Sans Arabic', 'Tajawal', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* JetBrains Mono for all numeric/financial data */
+.num, .font-mono, code, [class*="font-mono"] {
+  font-family: 'JetBrains Mono', 'Tajawal', monospace !important;
 }
 
 /* Smooth transitions on all interactive elements */
@@ -91,9 +100,9 @@ input, select, textarea {
 .stat-card.accent-slate    { border-right: 3px solid #64748b; }
 
 /* Subtle gradient tint per accent in dark mode */
-.dark .stat-card.accent-positive { background: linear-gradient(145deg, #111827 0%, rgba(0,212,170,0.05) 100%); }
-.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #111827 0%, rgba(245,158,11,0.05) 100%); }
-.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #111827 0%, rgba(59,130,246,0.05) 100%); }
+.dark .stat-card.accent-positive { background: linear-gradient(145deg, #0d1421 0%, rgba(0,200,150,0.06) 100%); }
+.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #0d1421 0%, rgba(245,158,11,0.06) 100%); }
+.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #0d1421 0%, rgba(77,159,236,0.06) 100%); }
 
 /* ─── Glassmorphism badge ─── */
 .glass-badge {

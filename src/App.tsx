@@ -570,7 +570,8 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'فشل التحليل');
-      setAiAnalysis(data.analysis);
+      // data.analysis is now a structured object from Claude
+      setAiAnalysis(typeof data.analysis === 'object' ? JSON.stringify(data.analysis) : data.analysis);
     } catch (e: any) {
       setAiAnalysis(`❌ ${e.message}`);
     } finally {
@@ -1085,7 +1086,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                   <div className="space-y-4 pt-4 border-t border-app-border">
                     <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
                       <Brain className="w-4 h-4 text-purple-500" />
-                      المحلل الذكي (Gemini AI)
+                      المحلل الذكي (Claude AI)
                     </h3>
                     
                     {!aiAnalysis && !isAnalyzing ? (
@@ -1103,18 +1104,68 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                             <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
                             <p className="text-sm text-app-text-muted animate-pulse">جاري تحليل البيانات العميقة للسهم...</p>
                           </div>
-                        ) : (
-                          <div className="prose prose-invert prose-sm max-w-none text-app-text leading-relaxed dark:prose-invert">
-                            <Markdown>{aiAnalysis}</Markdown>
-                            <button
-                              onClick={handleAIAnalysis}
-                              className="mt-4 flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 transition-colors font-medium"
-                            >
-                              <RefreshCw className="w-3 h-3" />
-                              تحديث التحليل
-                            </button>
-                          </div>
-                        )}
+                        ) : (() => {
+                          // Try to parse as structured Claude JSON
+                          let parsed: any = null;
+                          try { parsed = aiAnalysis ? JSON.parse(aiAnalysis) : null; } catch { parsed = null; }
+
+                          if (parsed && parsed.recommendation) {
+                            const recColor = parsed.recommendation === 'شراء' ? 'text-emerald-400' : parsed.recommendation === 'بيع' ? 'text-rose-400' : 'text-amber-400';
+                            const recBg    = parsed.recommendation === 'شراء' ? 'bg-emerald-500/10 border-emerald-500/25' : parsed.recommendation === 'بيع' ? 'bg-rose-500/10 border-rose-500/25' : 'bg-amber-500/10 border-amber-500/25';
+                            return (
+                              <div className="space-y-3">
+                                {/* Recommendation header */}
+                                <div className={`flex items-center justify-between p-3 rounded-xl border ${recBg}`}>
+                                  <div>
+                                    <p className="text-[10px] text-app-text-muted mb-0.5">التوصية</p>
+                                    <p className={`text-xl font-extrabold ${recColor}`}>{parsed.recommendation}</p>
+                                  </div>
+                                  <div className="text-center">
+                                    <p className="text-[10px] text-app-text-muted mb-0.5">الثقة</p>
+                                    <p className={`text-xl font-extrabold num ${recColor}`}>{parsed.confidence}%</p>
+                                  </div>
+                                  <div className="text-center">
+                                    <p className="text-[10px] text-app-text-muted mb-0.5">المخاطر</p>
+                                    <p className={`text-sm font-bold ${parsed.risk === 'مرتفع' ? 'text-rose-400' : parsed.risk === 'منخفض' ? 'text-emerald-400' : 'text-amber-400'}`}>{parsed.risk}</p>
+                                  </div>
+                                </div>
+                                {/* Summary */}
+                                {parsed.summary && <p className="text-sm text-app-text leading-relaxed">{parsed.summary}</p>}
+                                {/* Price targets */}
+                                <div className="grid grid-cols-2 gap-2">
+                                  {parsed.entry   && <div className="p-2.5 bg-app-bg rounded-xl border border-app-border"><p className="text-[10px] text-app-text-muted">دخول</p><p className="num font-bold text-app-text text-sm">{parsed.entry} ر.س</p></div>}
+                                  {parsed.stopLoss && <div className="p-2.5 bg-rose-500/5 rounded-xl border border-rose-500/20"><p className="text-[10px] text-app-text-muted">وقف الخسارة</p><p className="num font-bold text-rose-400 text-sm">{parsed.stopLoss} ر.س</p></div>}
+                                  {parsed.target1 && <div className="p-2.5 bg-emerald-500/5 rounded-xl border border-emerald-500/20"><p className="text-[10px] text-app-text-muted">هدف 1</p><p className="num font-bold text-emerald-400 text-sm">{parsed.target1} ر.س</p></div>}
+                                  {parsed.target2 && <div className="p-2.5 bg-emerald-500/5 rounded-xl border border-emerald-500/20"><p className="text-[10px] text-app-text-muted">هدف 2</p><p className="num font-bold text-emerald-400 text-sm">{parsed.target2} ر.س</p></div>}
+                                </div>
+                                {/* Reasoning */}
+                                {Array.isArray(parsed.reasoning) && parsed.reasoning.length > 0 && (
+                                  <div className="space-y-1.5">
+                                    {parsed.reasoning.map((r: string, i: number) => (
+                                      <div key={i} className="flex items-start gap-2 text-[11px]">
+                                        <CheckCircle2 className="w-3 h-3 text-purple-400 shrink-0 mt-0.5" />
+                                        <span className="text-app-text">{r}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <button onClick={handleAIAnalysis} className="flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 transition-colors font-medium">
+                                  <RefreshCw className="w-3 h-3" /> تحديث التحليل
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          // Fallback: render as markdown text
+                          return (
+                            <div className="prose prose-invert prose-sm max-w-none text-app-text leading-relaxed dark:prose-invert">
+                              <Markdown>{aiAnalysis ?? ''}</Markdown>
+                              <button onClick={handleAIAnalysis} className="mt-4 flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 transition-colors font-medium">
+                                <RefreshCw className="w-3 h-3" /> تحديث التحليل
+                              </button>
+                            </div>
+                          );
+                        })()}
                         <div className="absolute top-0 right-0 p-2 opacity-10">
                           <Brain className="w-12 h-12 text-purple-500" />
                         </div>
@@ -1182,24 +1233,33 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                               <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider bg-blue-500/10 px-2 py-0.5 rounded">
                                 {item.source}
                               </span>
-                              <span className="text-[10px] text-app-text-muted font-mono">
-                                {item.date}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {item.sentiment && (
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                    item.sentiment === 'إيجابي' ? 'bg-emerald-500/10 text-emerald-400' :
+                                    item.sentiment === 'سلبي'   ? 'bg-rose-500/10 text-rose-400' :
+                                    'bg-app-bg text-app-text-muted'
+                                  }`}>
+                                    {item.sentiment}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-app-text-muted font-mono">
+                                  {item.date}
+                                </span>
+                              </div>
                             </div>
-                            <h4 className="text-base font-bold text-app-text mb-3 group-hover:text-blue-400 transition-colors">
+                            <h4 className="text-sm font-bold text-app-text mb-2 group-hover:text-blue-400 transition-colors leading-snug">
                               {item.title}
                             </h4>
-                            <div className="text-sm text-app-text-muted leading-relaxed mb-4 line-clamp-3">
-                              {item.summary}
-                            </div>
-                            <div className="mt-auto flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-[10px] text-emerald-500 font-bold">
-                                <Brain className="w-3 h-3" />
-                                AI Summary
+                            {item.summary && item.summary !== item.title && (
+                              <div className="text-xs text-app-text-muted leading-relaxed mb-3 line-clamp-2">
+                                {item.summary}
                               </div>
-                              <a 
-                                href={item.url} 
-                                target="_blank" 
+                            )}
+                            <div className="mt-auto flex items-center justify-end">
+                              <a
+                                href={item.url}
+                                target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1 text-xs font-bold text-app-text hover:text-blue-500 transition-colors"
                               >
@@ -2837,7 +2897,7 @@ function App() {
         })()}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
           {[
             { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount  || 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
             { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks.length  || 0, iconColor: 'text-amber-500',   delay: 0.07 },
