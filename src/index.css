@@ -202,8 +202,4 @@ body { overscroll-behavior-y: none; }
 /* ─── Modal shadow ─── */
 .modal-shadow { box-shadow: var(--shadow-modal); }
 
-/* ─── Header blur ─── */
-.header-blur {
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-}
+/* .header-blur — removed; header uses inline style for isolation */

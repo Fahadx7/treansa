@@ -285,7 +285,8 @@ const TickerTape = ({ data, marketIndex }: { data: StockStats[], marketIndex: an
   );
 
   return (
-    <div className="bg-app-surface/80 backdrop-blur-md border-b border-app-border h-10 flex items-center overflow-hidden whitespace-nowrap sticky top-0 z-[60]">
+    <div className="h-10 flex items-center overflow-hidden whitespace-nowrap sticky top-0 z-[49]"
+         style={{ background: 'rgba(15,17,23,0.98)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-app-bg to-transparent z-10" />
       <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-app-bg to-transparent z-10" />
       
@@ -2231,7 +2232,15 @@ function App() {
       </motion.button>
 
       {/* Header */}
-      <header className="border-b border-app-border bg-app-surface/80 backdrop-blur-xl sticky top-0 z-50 transition-colors safe-top">
+      <header
+        className="sticky top-0 z-[80] safe-top"
+        style={{
+          background: 'rgba(15, 17, 23, 0.95)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.10)',
+        }}
+      >
         <div className="max-w-7xl mx-auto px-4 h-20 sm:h-16 flex flex-col sm:flex-row items-center justify-between gap-4 py-2 sm:py-0">
           <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
             <div className="flex items-center gap-3">
