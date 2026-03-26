@@ -540,9 +540,30 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
 
   const handleAIAnalysis = async () => {
     setIsAnalyzing(true);
+    setAiAnalysis(null);
     try {
-      await new Promise(r => setTimeout(r, 300));
-      setAiAnalysis('⚠️ تحليل الذكاء الاصطناعي يتطلب الاتصال بالخادم.\n\nيمكنك استخدام مؤشرات الرسم البياني للتحليل الذاتي.');
+      const ind = liveIndicators;
+      const res = await fetch('/api/ai-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol:      stock.symbol,
+          companyName: stock.companyName,
+          price:       stock.price,
+          change:      stock.change,
+          rsi:         ind?.rsi      ?? stock.rsi      ?? 50,
+          wave:        ind?.wave     ?? stock.wave     ?? 'غير محدد',
+          macd:        ind?.macd     ?? stock.macd,
+          bb:          ind?.bb       ?? stock.bb,
+          atr:         ind?.atr      ?? stock.atr,
+          stochRsi:    ind?.stochRsi ?? stock.stochRsi,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'فشل التحليل');
+      setAiAnalysis(data.analysis);
+    } catch (e: any) {
+      setAiAnalysis(`❌ ${e.message}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -553,7 +574,16 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
     setLoadingNews(true);
     setNewsError(null);
     try {
-      setNewsError('ميزة الأخبار تتطلب الاتصال بالخادم.');
+      const res = await fetch('/api/ai-news', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: stock.symbol, companyName: stock.companyName }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'فشل جلب الأخبار');
+      setNews(data.news ?? []);
+    } catch (e: any) {
+      setNewsError(e.message);
     } finally {
       setLoadingNews(false);
     }
@@ -1046,10 +1076,11 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                         ) : (
                           <div className="prose prose-invert prose-sm max-w-none text-app-text leading-relaxed dark:prose-invert">
                             <Markdown>{aiAnalysis}</Markdown>
-                            <button 
-                              onClick={() => setAiAnalysis(null)}
-                              className="mt-4 text-[10px] text-app-text-muted hover:text-app-text underline"
+                            <button
+                              onClick={handleAIAnalysis}
+                              className="mt-4 flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 transition-colors font-medium"
                             >
+                              <RefreshCw className="w-3 h-3" />
                               تحديث التحليل
                             </button>
                           </div>
@@ -1071,7 +1102,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                       آخر الأخبار والتقارير
                     </h3>
                     <button 
-                      onClick={() => { setNews([]); fetchNews(); }}
+                      onClick={() => { setNews([]); setNewsError(null); fetchNews(); }}
                       className="text-[10px] font-bold text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1"
                     >
                       <RefreshCw className={`w-3 h-3 ${loadingNews ? 'animate-spin' : ''}`} />
