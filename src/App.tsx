@@ -405,38 +405,46 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
   accent?: 'emerald' | 'rose' | 'amber';
 }) => {
   const accentCls = {
-    emerald: { icon: 'bg-emerald-500/10 text-emerald-500', border: 'border-emerald-500/20' },
-    rose:    { icon: 'bg-rose-500/10 text-rose-500',       border: 'border-rose-500/20'    },
-    amber:   { icon: 'bg-amber-500/10 text-amber-500',     border: 'border-amber-500/20'   },
+    emerald: { icon: 'bg-emerald-500/10 text-emerald-500' },
+    rose:    { icon: 'bg-rose-500/10 text-rose-500'       },
+    amber:   { icon: 'bg-amber-500/10 text-amber-500'     },
   }[accent];
 
+  const metricLabel = type === 'price' ? 'التغير' : type === 'liquidity' ? 'السيولة' : 'الموجة';
+
   return (
-    <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex flex-col h-[440px] shadow-sm dark:shadow-none">
+    <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex flex-col shadow-sm" style={{ minHeight: 420 }}>
       {/* Header */}
-      <div className={`p-4 border-b border-app-border flex items-center justify-between bg-gradient-to-l from-transparent`}>
+      <div className="px-5 py-4 border-b border-app-border flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className={`p-1.5 rounded-lg ${accentCls.icon}`}>
+          <div className={`p-2 rounded-lg ${accentCls.icon}`}>
             <Icon className="w-4 h-4" />
           </div>
           <h3 className="text-sm font-bold tracking-tight">{title}</h3>
         </div>
-        <span className="text-[10px] text-app-text-muted border border-app-border px-2 py-0.5 rounded-full font-mono">
-          TOP 10
+        <span className="text-[10px] text-app-text-muted border border-app-border px-2.5 py-1 rounded-full font-mono">
+          {data.length > 0 ? `${data.length} سهم` : 'TOP 10'}
         </span>
       </div>
 
-      {/* Column headers — sticky */}
-      <div className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_80px_auto_auto] gap-x-2 px-3 py-2.5 sticky top-0 z-10 border-b border-app-border bg-app-surface/95 backdrop-blur-sm"
-           style={{ fontSize: 11, letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+      {/* Column headers */}
+      <div
+        className="grid gap-x-3 px-4 py-2.5 border-b border-app-border bg-app-surface/95 backdrop-blur-sm sticky top-0 z-10"
+        style={{
+          gridTemplateColumns: type === 'wave' ? '1fr auto auto' : '1fr 64px auto auto',
+          fontSize: 11, letterSpacing: '0.05em', fontWeight: 700,
+          color: 'var(--text-muted)', textTransform: 'uppercase',
+        }}
+      >
         <span>الشركة</span>
-        <span className="hidden sm:block text-center">RSI</span>
-        <span className="text-center">{type === 'price' ? 'التغير' : type === 'liquidity' ? 'السيولة' : 'الموجة'}</span>
+        {type !== 'wave' && <span className="text-center">RSI</span>}
+        <span className="text-center">{metricLabel}</span>
         <span className="text-center">قوة</span>
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {data.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-app-text-muted">
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-app-text-muted">
             <Loader2 className="w-5 h-5 animate-spin opacity-40" />
             <span className="text-xs italic">جاري التحليل...</span>
           </div>
@@ -446,33 +454,38 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
           return (
             <div
               key={i}
-              className="zebra-row grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_80px_auto_auto] gap-x-2 items-center px-3 py-2 cursor-pointer group"
+              className="zebra-row grid gap-x-3 items-start px-4 py-3 cursor-pointer group"
+              style={{ gridTemplateColumns: type === 'wave' ? '1fr auto auto' : '1fr 64px auto auto' }}
               onClick={() => onStockClick(item)}
             >
-              {/* Company — full name, wraps to 2 lines */}
-              <div className="min-w-0">
-                <div className="font-bold leading-snug line-clamp-2 group-hover:text-[#00d4aa] transition-colors"
+              {/* Company — full name, no truncation */}
+              <div className="min-w-0 space-y-0.5">
+                <div className="font-semibold leading-snug group-hover:text-[#00d4aa] transition-colors break-words"
                      style={{ fontSize: 13, color: 'var(--text)' }}>
                   {item.companyName || '---'}
                 </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-app-text-muted num" style={{ fontSize: 10 }}>{item.symbol?.replace('.SR','')}</span>
-                  <span className="num" style={{ fontSize: 10, color: isPos ? 'var(--positive)' : 'var(--negative)' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-app-text-muted font-mono" style={{ fontSize: 10 }}>
+                    {item.symbol?.replace('.SR', '')}
+                  </span>
+                  <span className="num font-bold" style={{ fontSize: 11, color: isPos ? 'var(--positive)' : 'var(--negative)' }}>
                     {item.price?.toFixed(2)}
                   </span>
                 </div>
               </div>
 
-              {/* RSI gauge — hidden on mobile */}
-              <div className="hidden sm:flex justify-center">
-                <RsiGauge value={item.rsi ?? 50} />
-              </div>
+              {/* RSI gauge — visible when columns allow */}
+              {type !== 'wave' && (
+                <div className="flex justify-center pt-1">
+                  <RsiGauge value={item.rsi ?? 50} />
+                </div>
+              )}
 
               {/* Primary metric */}
-              <div className="text-right num font-bold" style={{ fontSize: 12 }}>
+              <div className="text-center num font-bold pt-1" style={{ fontSize: 12 }}>
                 {type === 'wave' ? (
-                  <span className="text-amber-400 font-medium line-clamp-2 text-left" style={{ fontSize: 10 }}>
-                    {item.wave}
+                  <span className="text-amber-400 font-medium text-right block leading-snug" style={{ fontSize: 10 }}>
+                    {item.wave || '—'}
                   </span>
                 ) : type === 'price' ? (
                   <span style={{ color: isPos ? 'var(--positive)' : 'var(--negative)' }}>
@@ -484,7 +497,7 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
               </div>
 
               {/* Score badge */}
-              <div className="flex justify-center">
+              <div className="flex justify-center pt-1">
                 <ScoreBadge score={score} />
               </div>
             </div>
@@ -2339,64 +2352,105 @@ function App() {
             <button onClick={runMarketScan} className="text-xs underline underline-offset-2 whitespace-nowrap">إعادة المحاولة</button>
           </div>
         )}
-        {/* TASI Index Card — always visible, skeleton while loading */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="stat-card accent-positive"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            {/* Label + icon */}
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-white/5 border border-white/8">
-                <BarChart3 className="w-5 h-5 text-[#00d4aa]" />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">المؤشر العام · تاسي</div>
-                <div className="text-[10px] text-app-text-muted">TASI</div>
-              </div>
-            </div>
+        {/* TASI Index Card — shows live data or derived market breadth as fallback */}
+        {(() => {
+          const tickers   = status?.tickerData ?? [];
+          const gainers   = tickers.filter(s => s.change > 0).length;
+          const losers    = tickers.filter(s => s.change < 0).length;
+          const unchanged = tickers.length - gainers - losers;
+          const avgChange = tickers.length
+            ? tickers.reduce((sum, s) => sum + s.change, 0) / tickers.length
+            : 0;
+          const hasBreadth = tickers.length > 0;
+          const isUp = tasiData ? tasiData.changePercent >= 0 : avgChange >= 0;
 
-            {tasiData ? (
-              <div className="flex items-end gap-6 flex-wrap">
-                {/* Price */}
-                <div>
-                  <div className="num text-[2.25rem] font-extrabold leading-none tracking-tight text-app-text">
-                    {tasiData.price.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="stat-card accent-positive"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-6">
+
+                {/* Label */}
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/8">
+                    <BarChart3 className="w-5 h-5 text-[#00d4aa]" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">
+                      المؤشر العام · تاسي
+                    </div>
+                    <div className="text-[10px] text-app-text-muted">TASI · Saudi All Share Index</div>
                   </div>
                 </div>
-                {/* Change */}
-                <div className="flex flex-col items-end gap-1">
-                  <div className={`flex items-center gap-1.5 text-lg font-bold num ${tasiData.changePercent >= 0 ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
-                    {tasiData.changePercent >= 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                    {tasiData.changePercent >= 0 ? '+' : ''}{tasiData.changePercent.toFixed(2)}%
+
+                {/* Values block */}
+                {tasiData && tasiData.price > 0 ? (
+                  /* ── Live TASI from Yahoo Finance ── */
+                  <div className="flex flex-wrap items-end gap-6">
+                    <div className="num text-[2.5rem] font-extrabold leading-none tracking-tight text-app-text">
+                      {tasiData.price.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className={`flex items-center gap-1 text-xl font-bold num ${isUp ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
+                        {isUp ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                        {tasiData.changePercent >= 0 ? '+' : ''}{tasiData.changePercent.toFixed(2)}%
+                      </div>
+                      <div className={`text-sm num font-semibold ${isUp ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
+                        {tasiData.change >= 0 ? '+' : ''}{tasiData.change.toFixed(2)} نقطة
+                      </div>
+                    </div>
+                    <div className="hidden sm:flex flex-col gap-1.5 border-r border-app-border pr-5 text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-app-text-muted">أعلى</span>
+                        <span className="num font-bold text-app-text">{tasiData.high.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-app-text-muted">أدنى</span>
+                        <span className="num font-bold text-app-text">{tasiData.low.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className={`text-xs num font-semibold ${tasiData.change >= 0 ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
-                    {tasiData.change >= 0 ? '+' : ''}{tasiData.change.toFixed(2)} نقطة
+                ) : hasBreadth ? (
+                  /* ── Derived market breadth (fallback when ^TASI unavailable) ── */
+                  <div className="flex flex-wrap items-center gap-6">
+                    <div className="flex flex-col gap-1">
+                      <div className={`flex items-center gap-1 text-xl font-bold num ${isUp ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
+                        {isUp ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                        {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%
+                      </div>
+                      <div className="text-[10px] text-app-text-muted">متوسط تغيّر الأسهم المفحوصة</div>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[#00d4aa] font-extrabold num text-xl">{gainers}</span>
+                        <span className="text-[10px] text-app-text-muted">صاعد</span>
+                      </div>
+                      <div className="h-8 w-px bg-app-border" />
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[#ff4757] font-extrabold num text-xl">{losers}</span>
+                        <span className="text-[10px] text-app-text-muted">هابط</span>
+                      </div>
+                      <div className="h-8 w-px bg-app-border" />
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-app-text-muted font-extrabold num text-xl">{unchanged}</span>
+                        <span className="text-[10px] text-app-text-muted">مستقر</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                {/* High / Low */}
-                <div className="hidden sm:flex flex-col gap-1 text-right border-r border-app-border pr-4">
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <span className="text-app-text-muted">أعلى</span>
-                    <span className="num font-bold text-app-text">{tasiData.high.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
+                ) : (
+                  /* ── Skeleton while first load ── */
+                  <div className="flex items-end gap-6 animate-pulse">
+                    <div className="h-10 w-36 bg-app-bg rounded-lg" />
+                    <div className="h-6 w-24 bg-app-bg rounded-lg" />
                   </div>
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <span className="text-app-text-muted">أدنى</span>
-                    <span className="num font-bold text-app-text">{tasiData.low.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
-                  </div>
-                </div>
+                )}
               </div>
-            ) : (
-              /* Skeleton while TASI loads */
-              <div className="flex items-end gap-6 animate-pulse">
-                <div className="h-10 w-32 bg-app-bg rounded-lg" />
-                <div className="h-6 w-20 bg-app-bg rounded-lg" />
-              </div>
-            )}
-          </div>
-        </motion.div>
+            </motion.div>
+          );
+        })()}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
@@ -2496,13 +2550,23 @@ function App() {
           );
         })()}
 
-        {/* Market Overview Tables */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          <MiniTable title="الأكثر ارتفاعاً" icon={TrendingUp}   data={status?.topGainers    || []} type="price"     onStockClick={setSelectedStock} accent="emerald" />
-          <MiniTable title="الأكثر انخفاضاً" icon={TrendingDown}  data={status?.topLosers     || []} type="price"     onStockClick={setSelectedStock} accent="rose"    />
-          <MiniTable title="دخول سيولة"      icon={CheckCircle2} data={status?.liquidityEntry || []} type="liquidity" onStockClick={setSelectedStock} accent="emerald" />
-          <MiniTable title="خروج سيولة"      icon={AlertCircle}  data={status?.liquidityExit  || []} type="liquidity" onStockClick={setSelectedStock} accent="rose"    />
-          <MiniTable title="موجات إليوت"     icon={Zap}          data={status?.waveStocks     || []} type="wave"      onStockClick={setSelectedStock} accent="amber"   />
+        {/* Market Overview Tables — Row 1: Gainers + Losers */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <MiniTable title="الأكثر ارتفاعاً" icon={TrendingUp}  data={status?.topGainers    || []} type="price"     onStockClick={setSelectedStock} accent="emerald" />
+          <MiniTable title="الأكثر انخفاضاً" icon={TrendingDown} data={status?.topLosers     || []} type="price"     onStockClick={setSelectedStock} accent="rose"    />
+        </div>
+
+        {/* Row 2: Liquidity Entry + Exit */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <MiniTable title="دخول سيولة" icon={CheckCircle2} data={status?.liquidityEntry || []} type="liquidity" onStockClick={setSelectedStock} accent="emerald" />
+          <MiniTable title="خروج سيولة" icon={AlertCircle}  data={status?.liquidityExit  || []} type="liquidity" onStockClick={setSelectedStock} accent="rose"    />
+        </div>
+
+        {/* Row 3: Elliott Waves — centered, half-width on large screens */}
+        <div className="flex justify-center">
+          <div className="w-full lg:w-1/2">
+            <MiniTable title="موجات إليوت" icon={Zap} data={status?.waveStocks || []} type="wave" onStockClick={setSelectedStock} accent="amber" />
+          </div>
         </div>
 
         {selectedStock && (
