@@ -91,6 +91,7 @@ import {
   buildStockFromQuote,
   buildHistoryFromChart,
   computeIndicators,
+  enrichStocksWithChartData,
   getAllSymbols,
   loadCache,
   saveCache,
@@ -1782,29 +1783,61 @@ function App() {
   };
 
   const buildAndSetStatus = (allStocks: StockStats[], marketIndex: any) => {
-    const topGainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 10);
-    const topLosers     = [...allStocks].sort((a, b) => a.change - b.change).slice(0, 10);
+    const topGainers     = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 10);
+    const topLosers      = [...allStocks].sort((a, b) => a.change - b.change).slice(0, 10);
     const liquidityEntry = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
     const liquidityExit  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change < 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 10);
+
+    // Wave stocks: volume+momentum candidates; real Elliott wave populated after chart enrichment
+    const waveStocks = allStocks
+      .filter(s => s.change > 0 && s.volumeRatio >= 1.8 &&
+        (s.wave !== undefined && s.wave !== 'غير محدد' ? true : s.rsi >= 50))
+      .sort((a, b) => b.volumeRatio - a.volumeRatio)
+      .slice(0, 15);
+
+    // Alerts: significant price moves (≥3%) or volume spikes (≥2.5×)
+    const alerts: Alert[] = allStocks
+      .filter(s => Math.abs(s.change) >= 3 || s.volumeRatio >= 2.5)
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+      .slice(0, 30)
+      .map(s => ({
+        type:        s.change >= 0 ? 'entry' as const : 'exit' as const,
+        symbol:      s.symbol,
+        companyName: s.companyName,
+        price:       s.price,
+        time:        new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+        wave:        s.wave,
+      }));
+
+    // Active trades = open margin positions enriched with latest price
+    const activeTrades: Trade[] = marginPositions.map(pos => ({
+      symbol:      pos.symbol,
+      companyName: SAUDI_STOCKS[pos.symbol.split('.')[0]] || pos.symbol,
+      entryPrice:  pos.entryPrice,
+      entryTime:   pos.openedAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString(),
+      rsi:         allStocks.find(s => s.symbol === pos.symbol)?.rsi ?? 50,
+      sma50:       allStocks.find(s => s.symbol === pos.symbol)?.price ?? pos.entryPrice,
+    }));
+
     setStatus({
-      lastScan: new Date().toISOString(),
-      isScanning: false,
-      processedCount: allStocks.length,
-      totalCount: getAllSymbols().length,
-      activeTradesCount: 0,
-      activeTrades: [],
-      alerts: [],
+      lastScan:          new Date().toISOString(),
+      isScanning:        false,
+      processedCount:    allStocks.length,
+      totalCount:        getAllSymbols().length,
+      activeTradesCount: marginPositions.length,
+      activeTrades,
+      alerts,
       topGainers,
       topLosers,
       liquidityEntry,
       liquidityExit,
-      waveStocks: [],
-      tickerData: allStocks,
-      customAlerts: [],
+      waveStocks,
+      tickerData:        allStocks,
+      customAlerts:      [],
       marketIndex,
       telegramConnected: false,
-      telegramBotName: null,
-      botStatusError: null,
+      telegramBotName:   null,
+      botStatusError:    null,
     });
   };
 
@@ -1863,6 +1896,12 @@ function App() {
       saveCache(allStocks, marketIndex);
       buildAndSetStatus(allStocks, marketIndex);
       setFetchError(null);
+
+      // Background: enrich top stocks with real indicators from chart data
+      // Calls buildAndSetStatus progressively as each batch completes
+      enrichStocksWithChartData(allStocks, (enriched) => {
+        buildAndSetStatus(enriched as StockStats[], marketIndex);
+      }).catch(() => { /* non-critical: enrichment failed, quote-level data still shown */ });
 
       // Send Telegram signals (fire-and-forget)
       const gainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 5);
@@ -1925,7 +1964,7 @@ function App() {
 
   useEffect(() => {
     runMarketScan();
-    const interval = setInterval(runMarketScan, 300000); // refresh every 5 min
+    const interval = setInterval(runMarketScan, 15 * 60 * 1000); // refresh every 15 min
     return () => clearInterval(interval);
   }, []);
 

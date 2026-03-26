@@ -316,6 +316,49 @@ export function buildStockFromQuote(q: any): any {
   };
 }
 
+// ---- Background chart enrichment ----
+// Fetches real OHLCV data for the top-N stocks by volume ratio and
+// computes RSI, MACD, BB, ATR, StochRSI, Elliott Wave in-place.
+// Calls onBatchDone after each parallel batch so the UI updates progressively.
+const ENRICH_TOP_N  = 20;
+const ENRICH_BATCH  = 5;
+
+export async function enrichStocksWithChartData(
+  stocks: any[],
+  onBatchDone: (updated: any[]) => void,
+): Promise<void> {
+  const enriched = [...stocks];
+  const candidates = [...stocks]
+    .sort((a, b) => b.volumeRatio - a.volumeRatio)
+    .slice(0, ENRICH_TOP_N);
+
+  for (let i = 0; i < candidates.length; i += ENRICH_BATCH) {
+    const batch = candidates.slice(i, i + ENRICH_BATCH);
+    const results = await Promise.allSettled(
+      batch.map(s => fetchChart(s.symbol, '1h', '30d')),
+    );
+    let changed = false;
+    for (let j = 0; j < batch.length; j++) {
+      const r = results[j];
+      if (r.status !== 'fulfilled' || r.value.quotes.length < 20) continue;
+      const ind = computeIndicators(r.value.quotes);
+      const idx = enriched.findIndex(s => s.symbol === batch[j].symbol);
+      if (idx === -1) continue;
+      enriched[idx] = {
+        ...enriched[idx],
+        rsi:      ind.rsi,
+        macd:     ind.macd,
+        bb:       ind.bb,
+        atr:      ind.atr,
+        stochRsi: ind.stochRsi,
+        wave:     ind.wave,
+      };
+      changed = true;
+    }
+    if (changed) onBatchDone([...enriched]);
+  }
+}
+
 export function buildHistoryFromChart(meta: any, quotes: any[]): any[] {
   const N          = 50;
   const start      = Math.max(0, quotes.length - N);
