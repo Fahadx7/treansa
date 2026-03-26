@@ -1975,6 +1975,8 @@ function App() {
   const [triggeredAlerts, setTriggeredAlerts] = useState<CustomAlert[]>([]);
   const [tasiLastUpdated, setTasiLastUpdated] = useState<Date | null>(null);
   const isScanningRef = useRef(false);
+  // Tracks symbols already sent to Telegram in current session — prevents duplicate alerts
+  const sentRadarAlertsRef = useRef(new Set<string>());
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true; // Default to dark
@@ -2273,6 +2275,8 @@ function App() {
   const runMarketScan = async () => {
     if (isScanningRef.current) return;
     isScanningRef.current = true;
+    // Reset dedup set each new scan cycle so new signals are always reported
+    sentRadarAlertsRef.current.clear();
 
     // Show cached data instantly, then refresh in background
     const cached = loadCache();
@@ -2317,16 +2321,16 @@ function App() {
       checkUserAlerts(allStocks);
       setFetchError(null);
 
-      // Background: enrich top stocks with real indicators from chart data
-      // Calls buildAndSetStatus progressively as each batch completes
+      // Background: enrich top stocks with real indicators from chart data.
+      // Capture the last enriched snapshot, then fire radar Telegram alerts.
+      let lastEnrichedSnapshot: StockStats[] = allStocks as StockStats[];
       enrichStocksWithChartData(allStocks, (enriched) => {
+        lastEnrichedSnapshot = enriched as StockStats[];
         buildAndSetStatus(enriched as StockStats[], marketIndex);
+      }).then(() => {
+        // All enrichment batches done — now we have real RSI/MACD/Wave data
+        sendRadarTelegramAlerts(lastEnrichedSnapshot);
       }).catch(() => { /* non-critical: enrichment failed, quote-level data still shown */ });
-
-      // Send Telegram signals (fire-and-forget)
-      const gainers    = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 5);
-      const liquidity  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 5);
-      sendTelegramSignals(gainers, liquidity);
     } catch (e: any) {
       setFetchError(e.message || 'خطأ في جلب البيانات');
     } finally {
@@ -2354,28 +2358,46 @@ function App() {
     }
   };
 
-  const sendTelegramSignals = async (topGainers: StockStats[], liquidityEntry: StockStats[]) => {
-    const signals = [
-      ...liquidityEntry.slice(0, 3),
-      ...topGainers.slice(0, 3).filter(s => !liquidityEntry.find(l => l.symbol === s.symbol)),
-    ].slice(0, 5);
-    if (!signals.length) return;
-    const lines = signals.map(s =>
-      `📈 *${s.companyName}* (${s.symbol.replace('.SR', '')})\n` +
-      `   السعر: ${s.price.toFixed(2)} ﷼  |  التغير: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%\n` +
-      `   حجم/متوسط: ${s.volumeRatio.toFixed(1)}x`
-    );
+  // Send Telegram for enriched stocks that score ≥ 4 (strong signal confluence)
+  // Only sends stocks not already sent this session (sentRadarAlertsRef dedup)
+  const sendRadarTelegramAlerts = async (enrichedStocks: StockStats[]) => {
+    const newSignals = enrichedStocks
+      .map(s => ({ s, sc: scoreStock(s) }))
+      .filter(({ s, sc }) => sc.total >= 4 && s.change > 0 && !sentRadarAlertsRef.current.has(s.symbol))
+      .sort((a, b) => b.sc.total - a.sc.total || b.s.volumeRatio - a.s.volumeRatio)
+      .slice(0, 5);
+
+    if (!newSignals.length) return;
+
+    // Mark as sent before the async call to prevent races
+    newSignals.forEach(({ s }) => sentRadarAlertsRef.current.add(s.symbol));
+
+    const timeStr = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+    const lines = newSignals.map(({ s, sc }) => {
+      const reasons = sc.reasons.slice(0, 3).join(' | ');
+      return (
+        `🟢 *${s.companyName}*  \`${s.symbol.replace('.SR', '')}\`\n` +
+        `   💰 ${s.price.toFixed(2)} ر.س  |  ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%  |  حجم ×${s.volumeRatio.toFixed(1)}\n` +
+        `   📡 ${reasons}\n` +
+        `   ⭐ قوة الإشارة: ${sc.total}/6 — ${sc.label}`
+      );
+    });
+
     const msg =
-      `🔔 *رادار السوق السعودي*\n` +
-      `⏰ ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}\n\n` +
-      lines.join('\n\n');
+      `🎯 *رادار الإشارات | ترندسا*\n` +
+      `🕐 ${timeStr}\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      lines.join('\n\n') +
+      `\n\n━━━━━━━━━━━━━━━━━━\n` +
+      `📊 تقاطع ${newSignals[0]?.sc?.total ?? 4}+ مؤشرات فنية`;
+
     try {
       await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg }),
       });
-    } catch { /* non-critical — don't surface to user */ }
+    } catch { /* non-critical */ }
   };
 
   const startScan = () => {
