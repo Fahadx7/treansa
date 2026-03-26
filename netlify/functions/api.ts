@@ -35,10 +35,9 @@ async function initYFCrumb(): Promise<void> {
         if (r2.ok) {
             yfCrumb = (await r2.text()).trim();
             yfCrumbExpiry = Date.now() + 3600_000; // ساعة واحدة
-            console.log('✅ YF crumb initialized');
         }
-    } catch (e) {
-        console.error('❌ Failed to get YF crumb:', e);
+    } catch {
+        // crumb unavailable — requests will proceed without it
     }
 }
 
@@ -467,7 +466,7 @@ async function quickFetch() {
 app.get("/api/status", async (req, res) => {
     // إذا لا توجد بيانات، اجلبها الآن فوراً (سريع < 5 ثواني)
     if (scanStatus.tickerData.size === 0) {
-        try { await quickFetch(); } catch (e) { console.error('quickFetch error:', e); }
+        try { await quickFetch(); } catch { /* non-critical: serve empty state */ }
     }
     res.json({
         ...scanStatus, tickerData: Array.from(scanStatus.tickerData.values()),

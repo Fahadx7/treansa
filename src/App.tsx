@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Radar, 
   TrendingUp, 
@@ -1710,6 +1710,48 @@ const MarginTrading = ({
   );
 };
 
+const AlertToast = ({
+  alert,
+  onDismiss,
+}: {
+  alert: CustomAlert;
+  onDismiss: (id: string) => void;
+}) => {
+  useEffect(() => {
+    const timer = setTimeout(() => onDismiss(alert.id), 8000);
+    return () => clearTimeout(timer);
+  }, [alert.id, onDismiss]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      className={`pointer-events-auto px-4 py-3 rounded-2xl border text-sm font-semibold shadow-xl flex items-start gap-2.5 ${
+        alert.condition === 'above'
+          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+          : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+      }`}
+      style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+    >
+      <Bell className="w-4 h-4 shrink-0 mt-0.5" />
+      <div className="min-w-0">
+        <div className="font-bold truncate">{alert.companyName}</div>
+        <div className="text-xs opacity-80">
+          {alert.condition === 'above' ? '↑ فوق' : '↓ تحت'} {alert.targetPrice.toFixed(2)} ر.س
+          {alert.triggeredPrice && ` · الحالي: ${alert.triggeredPrice.toFixed(2)}`}
+        </div>
+      </div>
+      <button
+        onClick={() => onDismiss(alert.id)}
+        className="opacity-50 hover:opacity-100 transition-opacity shrink-0 mr-auto"
+      >
+        ✕
+      </button>
+    </motion.div>
+  );
+};
+
 const AlertsModal = ({ onClose }: { onClose: () => void }) => {
   const [allAlerts, setAllAlerts] = useState<CustomAlert[]>(() =>
     JSON.parse(localStorage.getItem('saudi_stock_alerts') || '[]'),
@@ -1871,6 +1913,7 @@ function App() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [triggeredAlerts, setTriggeredAlerts] = useState<CustomAlert[]>([]);
+  const isScanningRef = useRef(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true; // Default to dark
@@ -2062,9 +2105,12 @@ function App() {
     const newlyTriggered: CustomAlert[] = [];
     let hasChanges = false;
 
+    // Build a Map once for O(1) lookup instead of O(n) find per alert
+    const stockMap = new Map<string, StockStats>(stocks.map(s => [s.symbol, s]));
+
     const updated = alerts.map(alert => {
       if (alert.triggered) return alert;
-      const stock = stocks.find(s => s.symbol === alert.symbol);
+      const stock = stockMap.get(alert.symbol);
       if (!stock) return alert;
       const hit =
         (alert.condition === 'above' && stock.price >= alert.targetPrice) ||
@@ -2164,6 +2210,9 @@ function App() {
   };
 
   const runMarketScan = async () => {
+    if (isScanningRef.current) return;
+    isScanningRef.current = true;
+
     // Show cached data instantly, then refresh in background
     const cached = loadCache();
     if (cached) {
@@ -2218,10 +2267,10 @@ function App() {
       const liquidity  = allStocks.filter(s => s.volumeRatio > 1.5 && s.change > 0).sort((a, b) => b.volumeRatio - a.volumeRatio).slice(0, 5);
       sendTelegramSignals(gainers, liquidity);
     } catch (e: any) {
-      console.error('Market scan failed', e);
       setFetchError(e.message || 'خطأ في جلب البيانات');
     } finally {
       setIsLoadingData(false);
+      isScanningRef.current = false;
     }
   };
 
@@ -2390,10 +2439,6 @@ function App() {
         closedAt: serverTimestamp()
       });
 
-      console.log('Margin position closed', {
-        symbol: position.symbol,
-        realizedPnl
-      });
     } catch (error) {
       console.error("Error closing margin position:", error);
     }
@@ -2438,35 +2483,14 @@ function App() {
   return (
     <div className="min-h-screen bg-app-bg text-app-text font-sans selection:bg-emerald-500/30 transition-colors duration-300" dir="rtl">
       {/* Price alert toasts */}
-      <div className="fixed bottom-24 left-4 z-[150] flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 300 }}>
+      <div className="fixed bottom-24 left-4 z-[150] flex flex-col-reverse gap-2 pointer-events-none" style={{ maxWidth: 300 }}>
         <AnimatePresence>
-          {triggeredAlerts.map((a, i) => (
-            <motion.div
-              key={a.id + i}
-              initial={{ opacity: 0, x: -40 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -40 }}
-              onAnimationComplete={() => {
-                setTimeout(() => {
-                  setTriggeredAlerts(prev => prev.filter(t => t.id !== a.id));
-                }, 8000);
-              }}
-              className={`pointer-events-auto px-4 py-3 rounded-2xl border text-sm font-semibold shadow-xl flex items-start gap-2.5 ${
-                a.condition === 'above'
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                  : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-              }`}
-              style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
-            >
-              <Bell className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-bold">{a.companyName}</div>
-                <div className="text-xs opacity-80">
-                  {a.condition === 'above' ? '↑ فوق' : '↓ تحت'} {a.targetPrice.toFixed(2)} ر.س
-                  {a.triggeredPrice && ` · الحالي: ${a.triggeredPrice.toFixed(2)}`}
-                </div>
-              </div>
-            </motion.div>
+          {triggeredAlerts.map(a => (
+            <AlertToast
+              key={a.id}
+              alert={a}
+              onDismiss={(id) => setTriggeredAlerts(prev => prev.filter(t => t.id !== id))}
+            />
           ))}
         </AnimatePresence>
       </div>
