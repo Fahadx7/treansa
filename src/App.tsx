@@ -97,6 +97,7 @@ import {
   loadCache,
   saveCache,
   scoreStock,
+  loadLastKnownTasi,
   type StockScore,
   type TASIData,
 } from './marketData';
@@ -2313,8 +2314,30 @@ function App() {
         throw new Error(reason);
       }
 
-      const marketIndex: TASIData | null = tasiResult;
-      if (marketIndex) { setTasiData(marketIndex); setTasiLastUpdated(new Date()); }
+      let marketIndex: TASIData | null = tasiResult;
+
+      if (marketIndex) {
+        setTasiData(marketIndex);
+        setTasiLastUpdated(new Date());
+      } else if (allStocks.length > 0) {
+        // ── Fallback: estimate TASI from stock average + last known base value ──
+        const base = loadLastKnownTasi();
+        if (base && base.price > 0) {
+          const avgChangePct = allStocks.reduce((s, st) => s + st.change, 0) / allStocks.length;
+          const estimatedPrice = base.price * (1 + avgChangePct / 100);
+          marketIndex = {
+            price:         estimatedPrice,
+            change:        estimatedPrice - base.price,
+            changePercent: avgChangePct,
+            high:          estimatedPrice,
+            low:           estimatedPrice,
+            volume:        0,
+            time:          new Date().toISOString(),
+          };
+          setTasiData(marketIndex);
+          setTasiLastUpdated(new Date());
+        }
+      }
 
       saveCache(allStocks, marketIndex);
       buildAndSetStatus(allStocks, marketIndex);
@@ -2416,7 +2439,18 @@ function App() {
       const data = await fetchTASI();
       setTasiData(data);
       setTasiLastUpdated(new Date());
-    } catch { /* silent — full scan will retry */ }
+    } catch {
+      // fetchTASI already tried both endpoints; try one more: use cached base + current stocks
+      if (status?.tickerData && status.tickerData.length > 0) {
+        const base = loadLastKnownTasi();
+        if (base && base.price > 0) {
+          const avg = status.tickerData.reduce((s, st) => s + st.change, 0) / status.tickerData.length;
+          const ep = base.price * (1 + avg / 100);
+          setTasiData({ price: ep, change: ep - base.price, changePercent: avg, high: ep, low: ep, volume: 0, time: new Date().toISOString() });
+          setTasiLastUpdated(new Date());
+        }
+      }
+    }
   };
 
   useEffect(() => {

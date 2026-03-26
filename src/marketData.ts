@@ -61,12 +61,69 @@ export interface TASIData {
   time:          string;
 }
 
+// ---- Persistent TASI cache (1-hour TTL) — survives full-market-cache expiry ----
+const TASI_CACHE_KEY = 'tasi_last_known';
+const TASI_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+export function saveLastKnownTasi(d: TASIData): void {
+  try { localStorage.setItem(TASI_CACHE_KEY, JSON.stringify({ ...d, savedAt: Date.now() })); } catch { /* storage full */ }
+}
+
+export function loadLastKnownTasi(): TASIData | null {
+  try {
+    const raw = localStorage.getItem(TASI_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - (parsed.savedAt ?? 0) > TASI_CACHE_TTL) return null;
+    return parsed as TASIData;
+  } catch { return null; }
+}
+
 export async function fetchTASI(): Promise<TASIData> {
-  const res = await fetch('/api/tasi');
-  if (!res.ok) throw new Error(`TASI API: HTTP ${res.status}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'فشل جلب مؤشر تاسي');
-  return data as TASIData;
+  // ── Attempt 1: dedicated /api/tasi (v8 chart — most reliable for indices) ──
+  try {
+    const res = await fetch('/api/tasi');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.price > 0) {
+        const result: TASIData = {
+          price:         data.price,
+          change:        data.change        ?? 0,
+          changePercent: data.changePercent ?? 0,
+          high:          data.high          ?? data.price,
+          low:           data.low           ?? data.price,
+          volume:        data.volume        ?? 0,
+          time:          data.time          ?? new Date().toISOString(),
+        };
+        saveLastKnownTasi(result);
+        return result;
+      }
+    }
+  } catch { /* fall through to next attempt */ }
+
+  // ── Attempt 2: quotes CORS proxy with ^TASI symbol (v7) ──
+  try {
+    const res = await fetch('/api/quotes?symbols=%5ETASI');
+    if (res.ok) {
+      const data = await res.json();
+      const q = Array.isArray(data.result) ? data.result[0] : null;
+      if (q?.regularMarketPrice > 0) {
+        const result: TASIData = {
+          price:         q.regularMarketPrice,
+          change:        q.regularMarketChange        ?? 0,
+          changePercent: q.regularMarketChangePercent ?? 0,
+          high:          q.regularMarketDayHigh       ?? q.regularMarketPrice,
+          low:           q.regularMarketDayLow        ?? q.regularMarketPrice,
+          volume:        q.regularMarketVolume        ?? 0,
+          time:          new Date().toISOString(),
+        };
+        saveLastKnownTasi(result);
+        return result;
+      }
+    }
+  } catch { /* fall through */ }
+
+  throw new Error('فشل جلب مؤشر تاسي من جميع المصادر');
 }
 
 export async function fetchQuotesBatch(symbols: string[]): Promise<any[]> {
