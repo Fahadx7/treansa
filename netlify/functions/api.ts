@@ -542,6 +542,28 @@ app.get("/api/history/:symbol", async (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
+// ── Dedicated TASI index endpoint (no symbol validation, index-specific)
+app.get("/api/tasi", async (req, res) => {
+    try {
+        const tasi = await yfQuote('^TASI', 8000);
+        if (!tasi || !tasi.regularMarketPrice) {
+            return res.status(503).json({ success: false, error: 'بيانات تاسي غير متوفرة حالياً' });
+        }
+        res.json({
+            success: true,
+            price:         tasi.regularMarketPrice,
+            change:        tasi.regularMarketChange        ?? 0,
+            changePercent: tasi.regularMarketChangePercent ?? 0,
+            high:          tasi.regularMarketDayHigh       ?? tasi.regularMarketPrice,
+            low:           tasi.regularMarketDayLow        ?? tasi.regularMarketPrice,
+            volume:        tasi.regularMarketVolume        ?? 0,
+            time:          new Date().toISOString(),
+        });
+    } catch (e: any) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // ── Lightweight batch quotes (browser → Netlify → Yahoo Finance, no CORS issues)
 app.get("/api/quotes", async (req, res) => {
     const raw = (req.query.symbols as string) || '';

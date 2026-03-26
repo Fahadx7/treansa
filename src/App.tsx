@@ -88,6 +88,7 @@ import { SAUDI_STOCKS } from './symbols';
 import {
   fetchQuotesBatch,
   fetchChart,
+  fetchTASI,
   buildStockFromQuote,
   buildHistoryFromChart,
   computeIndicators,
@@ -97,6 +98,7 @@ import {
   saveCache,
   scoreStock,
   type StockScore,
+  type TASIData,
 } from './marketData';
 
 const List = (ReactWindow as any).FixedSizeList;
@@ -243,15 +245,7 @@ interface Status {
   waveStocks: StockStats[];
   tickerData: StockStats[];
   customAlerts: CustomAlert[];
-  marketIndex: {
-    price: number;
-    change: number;
-    changePercent: number;
-    high: number;
-    low: number;
-    volume: number;
-    time: string;
-  } | null;
+  marketIndex: TASIData | null;
   telegramConnected: boolean;
   telegramBotName: string | null;
   botStatusError: string | null;
@@ -1591,6 +1585,7 @@ function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
+  const [tasiData, setTasiData] = useState<TASIData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
@@ -1846,6 +1841,7 @@ function App() {
     const cached = loadCache();
     if (cached) {
       buildAndSetStatus(cached.stocks, cached.marketIndex);
+      if (cached.marketIndex) setTasiData(cached.marketIndex);
       setFetchError(null);
     }
 
@@ -1858,13 +1854,11 @@ function App() {
       const chunks: string[][] = [];
       for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
 
-      const results = await Promise.allSettled([
-        ...chunks.map(c => fetchQuotesBatch(c)),
-        fetchQuotesBatch(['^TASI']),
+      // Fire stocks + TASI in parallel (TASI uses dedicated endpoint)
+      const [stockResults, tasiResult] = await Promise.all([
+        Promise.allSettled(chunks.map(c => fetchQuotesBatch(c))),
+        fetchTASI().catch(() => null),
       ]);
-
-      const tasiRaw = results[results.length - 1];
-      const stockResults = results.slice(0, -1);
 
       const allStocks: StockStats[] = [];
       for (const r of stockResults) {
@@ -1873,25 +1867,13 @@ function App() {
         }
       }
       if (allStocks.length === 0) {
-        // Surface the first rejection reason so the user sees what actually failed
         const firstFail = stockResults.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
         const reason = firstFail?.reason?.message ?? 'جميع الـ proxies فشلت';
         throw new Error(reason);
       }
 
-      let marketIndex = null;
-      if (tasiRaw.status === 'fulfilled' && tasiRaw.value[0]) {
-        const t = tasiRaw.value[0];
-        marketIndex = {
-          price: t.regularMarketPrice,
-          change: t.regularMarketChange,
-          changePercent: t.regularMarketChangePercent,
-          high: t.regularMarketDayHigh,
-          low: t.regularMarketDayLow,
-          volume: t.regularMarketVolume,
-          time: new Date().toISOString(),
-        };
-      }
+      const marketIndex: TASIData | null = tasiResult;
+      if (marketIndex) setTasiData(marketIndex);
 
       saveCache(allStocks, marketIndex);
       buildAndSetStatus(allStocks, marketIndex);
@@ -2357,6 +2339,65 @@ function App() {
             <button onClick={runMarketScan} className="text-xs underline underline-offset-2 whitespace-nowrap">إعادة المحاولة</button>
           </div>
         )}
+        {/* TASI Index Card — always visible, skeleton while loading */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="stat-card accent-positive"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Label + icon */}
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-white/5 border border-white/8">
+                <BarChart3 className="w-5 h-5 text-[#00d4aa]" />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">المؤشر العام · تاسي</div>
+                <div className="text-[10px] text-app-text-muted">TASI</div>
+              </div>
+            </div>
+
+            {tasiData ? (
+              <div className="flex items-end gap-6 flex-wrap">
+                {/* Price */}
+                <div>
+                  <div className="num text-[2.25rem] font-extrabold leading-none tracking-tight text-app-text">
+                    {tasiData.price.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                {/* Change */}
+                <div className="flex flex-col items-end gap-1">
+                  <div className={`flex items-center gap-1.5 text-lg font-bold num ${tasiData.changePercent >= 0 ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
+                    {tasiData.changePercent >= 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                    {tasiData.changePercent >= 0 ? '+' : ''}{tasiData.changePercent.toFixed(2)}%
+                  </div>
+                  <div className={`text-xs num font-semibold ${tasiData.change >= 0 ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
+                    {tasiData.change >= 0 ? '+' : ''}{tasiData.change.toFixed(2)} نقطة
+                  </div>
+                </div>
+                {/* High / Low */}
+                <div className="hidden sm:flex flex-col gap-1 text-right border-r border-app-border pr-4">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-app-text-muted">أعلى</span>
+                    <span className="num font-bold text-app-text">{tasiData.high.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-app-text-muted">أدنى</span>
+                    <span className="num font-bold text-app-text">{tasiData.low.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Skeleton while TASI loads */
+              <div className="flex items-end gap-6 animate-pulse">
+                <div className="h-10 w-32 bg-app-bg rounded-lg" />
+                <div className="h-6 w-20 bg-app-bg rounded-lg" />
+              </div>
+            )}
+          </div>
+        </motion.div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
           {[

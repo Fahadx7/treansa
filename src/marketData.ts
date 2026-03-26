@@ -51,6 +51,24 @@ export function getAllSymbols(): string[] {
   return Object.keys(SAUDI_STOCKS).map(s => `${s}.SR`);
 }
 
+export interface TASIData {
+  price:         number;
+  change:        number;
+  changePercent: number;
+  high:          number;
+  low:           number;
+  volume:        number;
+  time:          string;
+}
+
+export async function fetchTASI(): Promise<TASIData> {
+  const res = await fetch('/api/tasi');
+  if (!res.ok) throw new Error(`TASI API: HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'فشل جلب مؤشر تاسي');
+  return data as TASIData;
+}
+
 export async function fetchQuotesBatch(symbols: string[]): Promise<any[]> {
   const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`);
   if (!res.ok) throw new Error(`Quotes API: HTTP ${res.status}`);
