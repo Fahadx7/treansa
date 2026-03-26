@@ -200,10 +200,14 @@ interface StockStats {
 }
 
 interface CustomAlert {
+  id: string;
   symbol: string;
-  targetPrice?: number;
-  targetRsi?: number;
+  companyName: string;
+  condition: 'above' | 'below';
+  targetPrice: number;
   triggered: boolean;
+  triggeredAt?: string;
+  triggeredPrice?: number;
   createdAt: string;
 }
 
@@ -517,8 +521,12 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
 }) => {
   const [activeTab, setActiveTab] = useState<'analysis' | 'news' | 'risk' | 'alerts'>('analysis');
   const [targetPrice, setTargetPrice] = useState<string>('');
-  const [targetRsi, setTargetRsi] = useState<string>('');
+  const [condition, setCondition] = useState<'above' | 'below'>('above');
   const [isSettingAlert, setIsSettingAlert] = useState(false);
+  const [localAlerts, setLocalAlerts] = useState<CustomAlert[]>(() => {
+    const all: CustomAlert[] = JSON.parse(localStorage.getItem('saudi_stock_alerts') || '[]');
+    return all.filter(a => a.symbol === stock.symbol);
+  });
   const [alertStatus, setAlertStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -646,32 +654,53 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   }, [stock.symbol]);
 
   const handleSetAlert = async () => {
-    if (!targetPrice && !targetRsi) {
-      setAlertStatus({ type: 'error', message: 'يرجى تحديد سعر أو RSI مستهدف' });
+    const price = parseFloat(targetPrice);
+    if (!targetPrice || isNaN(price) || price <= 0) {
+      setAlertStatus({ type: 'error', message: 'يرجى إدخال سعر مستهدف صحيح' });
       return;
     }
 
     setIsSettingAlert(true);
     try {
       const key = 'saudi_stock_alerts';
-      const existing: any[] = JSON.parse(localStorage.getItem(key) || '[]');
-      existing.push({
+      const existing: CustomAlert[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const duplicate = existing.find(
+        a => a.symbol === stock.symbol && a.condition === condition && !a.triggered,
+      );
+      if (duplicate) {
+        setAlertStatus({ type: 'error', message: 'يوجد تنبيه نشط بنفس الشرط لهذا السهم' });
+        setIsSettingAlert(false);
+        setTimeout(() => setAlertStatus({ type: null, message: '' }), 3000);
+        return;
+      }
+      const newAlert: CustomAlert = {
+        id: Date.now().toString(),
         symbol: stock.symbol,
-        targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
-        targetRsi: targetRsi ? parseFloat(targetRsi) : undefined,
+        companyName: stock.companyName,
+        condition,
+        targetPrice: price,
         triggered: false,
         createdAt: new Date().toISOString(),
-      });
+      };
+      existing.push(newAlert);
       localStorage.setItem(key, JSON.stringify(existing));
-      setAlertStatus({ type: 'success', message: '✅ تم ضبط التنبيه (يُحفظ محلياً)' });
+      setLocalAlerts(existing.filter(a => a.symbol === stock.symbol));
+      setAlertStatus({ type: 'success', message: `✅ تنبيه مضبوط: ${condition === 'above' ? 'فوق' : 'تحت'} ${price.toFixed(2)} ر.س` });
       setTargetPrice('');
-      setTargetRsi('');
-    } catch (error) {
+    } catch {
       setAlertStatus({ type: 'error', message: '❌ فشل ضبط التنبيه' });
     } finally {
       setIsSettingAlert(false);
       setTimeout(() => setAlertStatus({ type: null, message: '' }), 3000);
     }
+  };
+
+  const handleDeleteLocalAlert = (id: string) => {
+    const key = 'saudi_stock_alerts';
+    const all: CustomAlert[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const updated = all.filter(a => a.id !== id);
+    localStorage.setItem(key, JSON.stringify(updated));
+    setLocalAlerts(updated.filter(a => a.symbol === stock.symbol));
   };
 
   return (
@@ -1266,60 +1295,123 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
               )}
 
               {activeTab === 'alerts' && (
-                <div className="space-y-6">
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
-                      <Bell className="w-4 h-4 text-purple-500" />
-                      ضبط تنبيه مخصص
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-app-text-muted uppercase font-bold">السعر المستهدف</label>
-                        <input 
-                          type="number" 
-                          value={targetPrice}
-                          onChange={(e) => setTargetPrice(e.target.value)}
-                          placeholder="مثال: 150.50"
-                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-app-text-muted uppercase font-bold">RSI المستهدف</label>
-                        <input 
-                          type="number" 
-                          value={targetRsi}
-                          onChange={(e) => setTargetRsi(e.target.value)}
-                          placeholder="مثال: 75"
-                          className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
-                        />
-                      </div>
-                    </div>
+                <div className="space-y-5">
+                  <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-purple-500" />
+                    ضبط تنبيه سعري
+                  </h3>
 
-                    <button 
-                      onClick={handleSetAlert}
-                      disabled={isSettingAlert}
-                      className="w-full py-4 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20"
+                  {/* Condition toggle */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setCondition('above')}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        condition === 'above'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                          : 'bg-app-bg text-app-text-muted border border-app-border'
+                      }`}
                     >
-                      {isSettingAlert ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
-                      تفعيل التنبيه الذكي
+                      <ArrowUpRight className="w-4 h-4" /> فوق السعر
                     </button>
+                    <button
+                      onClick={() => setCondition('below')}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        condition === 'below'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                          : 'bg-app-bg text-app-text-muted border border-app-border'
+                      }`}
+                    >
+                      <ArrowDownRight className="w-4 h-4" /> تحت السعر
+                    </button>
+                  </div>
 
-                    <AnimatePresence>
-                      {alertStatus.type && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className={`text-xs text-center p-3 rounded-xl ${
-                            alertStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                  {/* Price input */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-app-text-muted uppercase font-bold">
+                      السعر المستهدف
+                      <span className="mr-2 text-app-text-muted font-normal normal-case">
+                        (الحالي: {stock.price.toFixed(2)} ر.س)
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      value={targetPrice}
+                      onChange={(e) => setTargetPrice(e.target.value)}
+                      placeholder={`مثال: ${stock.price.toFixed(2)}`}
+                      className="w-full bg-app-bg border border-app-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-app-text"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSetAlert}
+                    disabled={isSettingAlert}
+                    className="w-full py-3.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSettingAlert ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                    تفعيل التنبيه
+                  </button>
+
+                  <AnimatePresence>
+                    {alertStatus.type && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className={`text-xs text-center p-3 rounded-xl ${
+                          alertStatus.type === 'success'
+                            ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                        }`}
+                      >
+                        {alertStatus.message}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Existing alerts for this stock */}
+                  {localAlerts.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] text-app-text-muted uppercase font-bold tracking-wider">
+                        تنبيهاتك لهذا السهم
+                      </p>
+                      {localAlerts.map(a => (
+                        <div
+                          key={a.id}
+                          className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm ${
+                            a.triggered
+                              ? 'bg-app-bg border-app-border text-app-text-muted'
+                              : a.condition === 'above'
+                                ? 'bg-emerald-500/8 border-emerald-500/25'
+                                : 'bg-rose-500/8 border-rose-500/25'
                           }`}
                         >
-                          {alertStatus.message}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                          <div className="flex items-center gap-2">
+                            {a.triggered ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            ) : a.condition === 'above' ? (
+                              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            ) : (
+                              <ArrowDownRight className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                            )}
+                            <span className={a.triggered ? 'line-through' : ''}>
+                              {a.condition === 'above' ? 'فوق' : 'تحت'} {a.targetPrice.toFixed(2)} ر.س
+                            </span>
+                            {a.triggered && a.triggeredPrice && (
+                              <span className="text-[10px] text-emerald-500">
+                                ✓ عند {a.triggeredPrice.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDeleteLocalAlert(a.id)}
+                            className="text-app-text-muted hover:text-rose-400 transition-colors p-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1618,6 +1710,146 @@ const MarginTrading = ({
   );
 };
 
+const AlertsModal = ({ onClose }: { onClose: () => void }) => {
+  const [allAlerts, setAllAlerts] = useState<CustomAlert[]>(() =>
+    JSON.parse(localStorage.getItem('saudi_stock_alerts') || '[]'),
+  );
+
+  const active    = allAlerts.filter(a => !a.triggered);
+  const triggered = allAlerts.filter(a => a.triggered);
+
+  const deleteAlert = (id: string) => {
+    const updated = allAlerts.filter(a => a.id !== id);
+    localStorage.setItem('saudi_stock_alerts', JSON.stringify(updated));
+    setAllAlerts(updated);
+  };
+
+  const clearTriggered = () => {
+    const updated = allAlerts.filter(a => !a.triggered);
+    localStorage.setItem('saudi_stock_alerts', JSON.stringify(updated));
+    setAllAlerts(updated);
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.92, opacity: 0, y: 16 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.92, opacity: 0, y: 16 }}
+          className="w-full max-w-md bg-app-surface border border-app-border rounded-3xl overflow-hidden modal-shadow modal-mobile max-h-[85vh] flex flex-col"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-app-border flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-purple-500/10">
+                <Bell className="w-4 h-4 text-purple-400" />
+              </div>
+              <div>
+                <h2 className="font-bold text-app-text">تنبيهاتي السعرية</h2>
+                <p className="text-[11px] text-app-text-muted">{active.length} نشط · {triggered.length} مُشغَّل</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-app-text-muted hover:text-app-text hover:bg-app-bg transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+            {/* Active */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-app-text-muted mb-2">نشطة</p>
+              {active.length === 0 ? (
+                <div className="text-center py-6 text-xs text-app-text-muted italic border border-dashed border-app-border rounded-xl">
+                  لا توجد تنبيهات نشطة — افتح أي سهم واضغط على تبويب التنبيهات
+                </div>
+              ) : active.map(a => (
+                <div
+                  key={a.id}
+                  className={`flex items-center justify-between px-4 py-3 mb-2 rounded-xl border ${
+                    a.condition === 'above'
+                      ? 'bg-emerald-500/8 border-emerald-500/25'
+                      : 'bg-rose-500/8 border-rose-500/25'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {a.condition === 'above'
+                      ? <ArrowUpRight className="w-4 h-4 text-emerald-400 shrink-0" />
+                      : <ArrowDownRight className="w-4 h-4 text-rose-400 shrink-0" />}
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate">{a.companyName}</div>
+                      <div className="text-[11px] text-app-text-muted">
+                        {a.condition === 'above' ? 'فوق' : 'تحت'}{' '}
+                        <span className="font-mono font-bold">{a.targetPrice.toFixed(2)}</span> ر.س
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deleteAlert(a.id)}
+                    className="text-app-text-muted hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/10 shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Triggered */}
+            {triggered.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-app-text-muted">مُشغَّلة</p>
+                  <button
+                    onClick={clearTriggered}
+                    className="text-[10px] text-rose-400 hover:text-rose-300 transition-colors"
+                  >
+                    مسح الكل
+                  </button>
+                </div>
+                {triggered.map(a => (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between px-4 py-3 mb-2 rounded-xl border border-app-border bg-app-bg/50"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm text-app-text-muted truncate">{a.companyName}</div>
+                        <div className="text-[11px] text-app-text-muted">
+                          {a.condition === 'above' ? 'فوق' : 'تحت'} {a.targetPrice.toFixed(2)} ر.س
+                          {a.triggeredPrice && (
+                            <span className="text-emerald-500 mr-1">· وصل {a.triggeredPrice.toFixed(2)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteAlert(a.id)}
+                      className="text-app-text-muted hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/10 shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -1637,6 +1869,8 @@ function App() {
   const [telegramStatus, setTelegramStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
   const [selectedStock, setSelectedStock] = useState<StockStats | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showAlertsModal, setShowAlertsModal] = useState(false);
+  const [triggeredAlerts, setTriggeredAlerts] = useState<CustomAlert[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true; // Default to dark
@@ -1822,6 +2056,54 @@ function App() {
     }
   };
 
+  const checkUserAlerts = (stocks: StockStats[]) => {
+    const key = 'saudi_stock_alerts';
+    const alerts: CustomAlert[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const newlyTriggered: CustomAlert[] = [];
+    let hasChanges = false;
+
+    const updated = alerts.map(alert => {
+      if (alert.triggered) return alert;
+      const stock = stocks.find(s => s.symbol === alert.symbol);
+      if (!stock) return alert;
+      const hit =
+        (alert.condition === 'above' && stock.price >= alert.targetPrice) ||
+        (alert.condition === 'below' && stock.price <= alert.targetPrice);
+      if (!hit) return alert;
+
+      hasChanges = true;
+      const now = new Date();
+      const triggered: CustomAlert = {
+        ...alert,
+        triggered: true,
+        triggeredAt: now.toISOString(),
+        triggeredPrice: stock.price,
+      };
+      newlyTriggered.push(triggered);
+
+      const direction = alert.condition === 'above' ? 'فوق' : 'تحت';
+      const timeStr = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+      const msg =
+        `🔔 تنبيه سعري | ترندسا\n\n` +
+        `📌 ${alert.companyName} (${alert.symbol.replace('.SR', '')})\n` +
+        `💰 السعر: ${stock.price.toFixed(2)} ر.س\n` +
+        `🎯 الهدف: ${direction} ${alert.targetPrice.toFixed(2)} ر.س\n` +
+        `🕐 ${timeStr}`;
+      fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg }),
+      }).catch(() => { /* non-critical */ });
+
+      return triggered;
+    });
+
+    if (hasChanges) {
+      localStorage.setItem(key, JSON.stringify(updated));
+      setTriggeredAlerts(prev => [...prev, ...newlyTriggered]);
+    }
+  };
+
   const buildAndSetStatus = (allStocks: StockStats[], marketIndex: any) => {
     const topGainers     = [...allStocks].sort((a, b) => b.change - a.change).slice(0, 10);
     const topLosers      = [...allStocks].sort((a, b) => a.change - b.change).slice(0, 10);
@@ -1922,6 +2204,7 @@ function App() {
 
       saveCache(allStocks, marketIndex);
       buildAndSetStatus(allStocks, marketIndex);
+      checkUserAlerts(allStocks);
       setFetchError(null);
 
       // Background: enrich top stocks with real indicators from chart data
@@ -2154,6 +2437,40 @@ function App() {
 
   return (
     <div className="min-h-screen bg-app-bg text-app-text font-sans selection:bg-emerald-500/30 transition-colors duration-300" dir="rtl">
+      {/* Price alert toasts */}
+      <div className="fixed bottom-24 left-4 z-[150] flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 300 }}>
+        <AnimatePresence>
+          {triggeredAlerts.map((a, i) => (
+            <motion.div
+              key={a.id + i}
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -40 }}
+              onAnimationComplete={() => {
+                setTimeout(() => {
+                  setTriggeredAlerts(prev => prev.filter(t => t.id !== a.id));
+                }, 8000);
+              }}
+              className={`pointer-events-auto px-4 py-3 rounded-2xl border text-sm font-semibold shadow-xl flex items-start gap-2.5 ${
+                a.condition === 'above'
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+              }`}
+              style={{ backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+            >
+              <Bell className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold">{a.companyName}</div>
+                <div className="text-xs opacity-80">
+                  {a.condition === 'above' ? '↑ فوق' : '↓ تحت'} {a.targetPrice.toFixed(2)} ر.س
+                  {a.triggeredPrice && ` · الحالي: ${a.triggeredPrice.toFixed(2)}`}
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* Telegram status toast */}
       <AnimatePresence>
         {telegramStatus.type && (
@@ -2264,6 +2581,29 @@ function App() {
 
           {/* ── Action buttons (left in RTL) ── */}
           <div className="flex items-center gap-2 mr-3">
+            {/* My Alerts bell */}
+            {(() => {
+              const activeCount = (JSON.parse(localStorage.getItem('saudi_stock_alerts') || '[]') as CustomAlert[]).filter(a => !a.triggered).length;
+              return (
+                <button
+                  onClick={() => setShowAlertsModal(true)}
+                  title="تنبيهاتي"
+                  className="relative flex items-center justify-center w-9 h-9 rounded-full transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  <Bell className="w-4 h-4" style={{ color: activeCount > 0 ? '#a855f7' : 'rgba(255,255,255,0.6)' }} />
+                  {activeCount > 0 && (
+                    <span
+                      className="absolute -top-1 -right-1 flex items-center justify-center text-white font-bold"
+                      style={{ background: '#a855f7', borderRadius: 999, minWidth: 16, height: 16, fontSize: 9, padding: '0 4px' }}
+                    >
+                      {activeCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
             {/* Telegram */}
             <a
               href="https://t.me/RadarsaudiiBot"
@@ -2579,6 +2919,10 @@ function App() {
 
         {showFeedback && (
           <FeedbackModal onClose={() => setShowFeedback(false)} user={user} />
+        )}
+
+        {showAlertsModal && (
+          <AlertsModal onClose={() => setShowAlertsModal(false)} />
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
