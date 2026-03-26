@@ -2185,39 +2185,6 @@ function App() {
       )}
       <TickerTape data={status?.tickerData || []} marketIndex={status?.marketIndex} />
       
-      {/* TASI Sidebar Widget */}
-      <div className="fixed top-24 left-6 z-40 hidden xl:block">
-        <motion.div 
-          initial={{ x: -100, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          className="bg-app-surface/80 backdrop-blur-md border border-app-border p-4 rounded-2xl shadow-xl w-48"
-        >
-          <div className="flex items-center gap-2 mb-3 text-app-text-muted">
-            <TrendingUp className="w-4 h-4" />
-            <span className="text-xs font-bold">المؤشر العام (تاسي)</span>
-          </div>
-          {status?.marketIndex ? (
-            <div className="space-y-1">
-              <div className="text-2xl font-bold font-mono">
-                {status.marketIndex.price.toLocaleString()}
-              </div>
-              <div className={`text-xs font-bold flex items-center gap-1 ${status.marketIndex.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {status.marketIndex.change >= 0 ? '+' : ''}{status.marketIndex.change.toFixed(2)} ({status.marketIndex.changePercent.toFixed(2)}%)
-              </div>
-              <div className="pt-2 mt-2 border-t border-app-border flex justify-between text-[10px] text-app-text-muted">
-                <span>الأعلى: {status.marketIndex.high.toLocaleString()}</span>
-                <span>الأدنى: {status.marketIndex.low.toLocaleString()}</span>
-              </div>
-            </div>
-          ) : (
-            <div className="animate-pulse space-y-2">
-              <div className="h-6 bg-app-bg rounded w-3/4"></div>
-              <div className="h-4 bg-app-bg rounded w-1/2"></div>
-            </div>
-          )}
-        </motion.div>
-      </div>
-
       {/* Feedback Floating Button */}
       <motion.button
         whileHover={{ scale: 1.05 }}
@@ -2231,155 +2198,132 @@ function App() {
         </span>
       </motion.button>
 
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <header
         className="sticky top-0 z-[80] safe-top"
         style={{
-          background: 'rgba(15, 17, 23, 0.95)',
+          background: '#0d1117',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.10)',
+          height: 64,
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 h-20 sm:h-16 flex flex-col sm:flex-row items-center justify-between gap-4 py-2 sm:py-0">
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-500/10 rounded-lg">
-                <Radar className="w-6 h-6 text-emerald-500" />
-              </div>
-              <div className="flex flex-col">
-                <h1 className="text-xl font-bold tracking-tight">تريندسا trandsa</h1>
-                <span className="text-[9px] text-app-text-muted font-bold uppercase tracking-wider -mt-1">منصة التداول الذكية</span>
-              </div>
-            </div>
+        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between gap-4">
 
-            {/* Mobile User Profile */}
-            <div className="sm:hidden">
-              {user ? (
-                <button 
-                  onClick={() => logout()}
-                  className="p-1.5 bg-app-bg hover:bg-app-surface rounded-xl border border-app-border transition-all"
-                >
-                  <img 
-                    src={user.photoURL || ''} 
-                    alt={user.displayName || ''} 
-                    className="w-6 h-6 rounded-lg"
-                    referrerPolicy="no-referrer"
-                  />
-                </button>
-              ) : (
-                <button 
-                  onClick={() => loginWithGoogle()}
-                  className="p-1.5 bg-app-bg hover:bg-app-surface rounded-xl border border-app-border transition-all"
-                >
-                  <User className="w-4 h-4" />
-                </button>
-              )}
+          {/* ── Logo (right in RTL) ── */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div style={{ padding: 8, background: 'rgba(0,212,170,0.12)', borderRadius: 10 }}>
+              <Radar className="w-5 h-5" style={{ color: '#00d4aa' }} />
+            </div>
+            <div>
+              <div className="font-extrabold text-white leading-tight" style={{ fontSize: 15, letterSpacing: '-0.02em' }}>
+                trandsa ترندسا
+              </div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.08em' }}>
+                منصة التداول الذكية
+              </div>
             </div>
           </div>
-          
-          <div className="flex items-center gap-4 w-full sm:w-auto justify-center sm:justify-end overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-            <div className="delay-badge shrink-0">
-              <Clock className="w-2.5 h-2.5" />
+
+          {/* ── Spacer ── */}
+          <div className="flex-1" />
+
+          {/* ── Nav / status area (center-ish) ── */}
+          <div className="hidden md:flex items-center gap-3">
+            {/* Delay badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold"
+                 style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b' }}>
+              <Clock className="w-3 h-3" />
               بيانات مؤخرة ~15 دقيقة
             </div>
-            {status?.marketIndex && (
-              <div className="flex items-center gap-4 px-3 py-1.5 bg-app-bg/80 border border-emerald-500/30 rounded-xl shadow-lg shadow-emerald-900/10 shrink-0">
-                <div className="flex flex-col">
-                  <div className="text-[9px] text-app-text-muted font-bold uppercase tracking-wider">تاسي (TASI)</div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-sm text-app-text">{status.marketIndex.price.toLocaleString()}</span>
-                    <span className={`text-[10px] font-bold flex items-center gap-0.5 ${status.marketIndex.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {status.marketIndex.change >= 0 ? '▲' : '▼'}
-                      {Math.abs(status.marketIndex.changePercent).toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="hidden md:flex gap-3 border-r border-app-border pr-3">
-                  <div className="flex flex-col">
-                    <span className="text-[8px] text-app-text-muted uppercase">السيولة</span>
-                    <span className="text-[10px] font-mono text-app-text">{(status.marketIndex.volume / 1000000).toFixed(1)}M</span>
-                  </div>
-                </div>
-              </div>
+
+            {/* Refresh */}
+            <button
+              onClick={startScan}
+              disabled={isLoadingData}
+              title="تحديث البيانات"
+              className="flex items-center justify-center w-9 h-9 rounded-full transition-colors disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <RefreshCw className={`w-4 h-4 text-white ${isLoadingData ? 'animate-spin' : ''}`} />
+            </button>
+
+            {/* Theme toggle */}
+            <button
+              onClick={toggleTheme}
+              title={isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
+              className="flex items-center justify-center w-9 h-9 rounded-full transition-colors"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              {isDarkMode
+                ? <Sun className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.6)' }} />
+                : <Moon className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.6)' }} />}
+            </button>
+          </div>
+
+          {/* ── Action buttons (left in RTL) ── */}
+          <div className="flex items-center gap-2 mr-3">
+            {/* Telegram */}
+            <a
+              href="https://t.me/RadarsaudiiBot"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 font-bold transition-all whitespace-nowrap"
+              style={{
+                height: 36, padding: '0 14px', borderRadius: 999,
+                background: '#00d4aa', color: '#0d1117', fontSize: 13,
+              }}
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">قناة التليجرام</span>
+            </a>
+
+            {/* Login / Avatar */}
+            {user ? (
+              <button
+                onClick={() => logout()}
+                className="flex items-center justify-center rounded-full overflow-hidden transition-opacity hover:opacity-80"
+                style={{ width: 36, height: 36, border: '2px solid rgba(0,212,170,0.4)' }}
+                title="تسجيل الخروج"
+              >
+                <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              </button>
+            ) : (
+              <button
+                onClick={() => loginWithGoogle()}
+                className="flex items-center gap-2 font-bold transition-all"
+                style={{
+                  height: 36, padding: '0 14px', borderRadius: 999,
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
+                  color: 'rgba(255,255,255,0.85)', fontSize: 13,
+                }}
+              >
+                <User className="w-4 h-4" />
+                <span className="hidden sm:inline">دخول</span>
+              </button>
             )}
 
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Mobile: refresh + theme */}
+            <div className="flex md:hidden items-center gap-1">
+              <button
+                onClick={startScan}
+                disabled={isLoadingData}
+                className="flex items-center justify-center w-9 h-9 rounded-full disabled:opacity-40"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                <RefreshCw className={`w-4 h-4 text-white ${isLoadingData ? 'animate-spin' : ''}`} />
+              </button>
               <button
                 onClick={toggleTheme}
-                className="p-2 bg-app-surface hover:bg-app-bg text-app-text-muted rounded-xl border border-app-border transition-all shadow-sm"
-                title={isDarkMode ? "الوضع الفاتح" : "الوضع الداكن"}
+                className="flex items-center justify-center w-9 h-9 rounded-full"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
               >
-                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                {isDarkMode ? <Sun className="w-4 h-4 text-white/60" /> : <Moon className="w-4 h-4 text-white/60" />}
               </button>
-
-              <a
-                href="https://t.me/RadarsaudiiBot"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 px-3 py-1.5 bg-[#0088cc] hover:bg-[#0077b5] text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-blue-900/30 whitespace-nowrap"
-              >
-                <Send className="w-3.5 h-3.5" />
-                قناة التليجرام
-              </a>
-
-              <div className="hidden lg:block">
-                {user && (
-                  <div className="text-left">
-                    <div className="text-xs font-bold text-app-text">{user.displayName}</div>
-                    <div className="text-[10px] text-app-text-muted">{user.email}</div>
-                  </div>
-                )}
-              </div>
-              {user && (
-                <button 
-                  onClick={() => logout()}
-                  className="hidden sm:block p-1.5 bg-app-bg hover:bg-app-surface rounded-xl border border-app-border transition-all group relative"
-                >
-                  <img 
-                    src={user.photoURL || ''} 
-                    alt={user.displayName || ''} 
-                    className="w-8 h-8 rounded-lg"
-                    referrerPolicy="no-referrer"
-                  />
-                </button>
-              )}
-              {!user && (
-                <button 
-                  onClick={() => loginWithGoogle()}
-                  className="hidden sm:flex items-center gap-2 px-4 py-2 bg-app-bg hover:bg-app-surface rounded-xl text-sm font-bold transition-all border border-app-border"
-                >
-                  <User className="w-4 h-4" />
-                  دخول
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <div className="flex items-center gap-2">
-                <button
-                    onClick={startScan}
-                    disabled={isLoadingData}
-                    className="p-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg transition-colors shadow-lg shadow-emerald-900/20"
-                    title="تحديث البيانات"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
-                  </button>
-                <button
-                    onClick={testTelegram}
-                    disabled={isTestingTelegram}
-                    className="p-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg transition-colors shadow-lg shadow-sky-900/20"
-                    title="اختبار التليجرام"
-                  >
-                    {isTestingTelegram
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <Send className="w-3.5 h-3.5" />
-                    }
-                  </button>
-              </div>
             </div>
           </div>
+
         </div>
       </header>
 
@@ -2392,102 +2336,117 @@ function App() {
             <button onClick={runMarketScan} className="text-xs underline underline-offset-2 whitespace-nowrap">إعادة المحاولة</button>
           </div>
         )}
-        {/* TASI Index Card — shows live data or derived market breadth as fallback */}
+        {/* ── TASI Index Card ────────────────────────────────────────────── */}
         {(() => {
           const tickers   = status?.tickerData ?? [];
           const gainers   = tickers.filter(s => s.change > 0).length;
           const losers    = tickers.filter(s => s.change < 0).length;
           const unchanged = tickers.length - gainers - losers;
           const avgChange = tickers.length
-            ? tickers.reduce((sum, s) => sum + s.change, 0) / tickers.length
-            : 0;
-          const hasBreadth = tickers.length > 0;
-          const isUp = tasiData ? tasiData.changePercent >= 0 : avgChange >= 0;
+            ? tickers.reduce((sum, s) => sum + s.change, 0) / tickers.length : 0;
+          const price     = tasiData?.price ?? 0;
+          const chg       = tasiData?.change ?? avgChange;
+          const chgPct    = tasiData?.changePercent ?? avgChange;
+          const isUp      = chgPct >= 0;
+          const hasPrice  = price > 0;
+          const hasMkt    = tickers.length > 0;
 
           return (
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-              className="stat-card accent-positive"
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              style={{
+                background: '#161b22',
+                borderRadius: 16,
+                borderRight: '3px solid #00d4aa',
+                padding: '20px 24px',
+              }}
             >
-              <div className="flex flex-wrap items-center justify-between gap-6">
-
-                {/* Label */}
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/8">
-                    <BarChart3 className="w-5 h-5 text-[#00d4aa]" />
+              {/* Title row */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div style={{ padding: 7, background: 'rgba(0,212,170,0.1)', borderRadius: 8 }}>
+                    <BarChart3 className="w-4 h-4" style={{ color: '#00d4aa' }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">
-                      المؤشر العام · تاسي
-                    </div>
-                    <div className="text-[10px] text-app-text-muted">TASI · Saudi All Share Index</div>
+                    <div className="font-bold text-white" style={{ fontSize: 14 }}>المؤشر العام - تاسي</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>TASI · Saudi All Share Index</div>
                   </div>
                 </div>
+                {!hasPrice && hasMkt && (
+                  <span style={{ fontSize: 10, color: 'rgba(245,158,11,0.8)', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: 999 }}>
+                    مشتق من السوق
+                  </span>
+                )}
+              </div>
 
-                {/* Values block */}
-                {tasiData && tasiData.price > 0 ? (
-                  /* ── Live TASI from Yahoo Finance ── */
-                  <div className="flex flex-wrap items-end gap-6">
-                    <div className="num text-[2.5rem] font-extrabold leading-none tracking-tight text-app-text">
-                      {tasiData.price.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}
+              {/* Main values row */}
+              <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+                {/* Index value */}
+                <div>
+                  {hasPrice ? (
+                    <div className="num font-extrabold text-white leading-none" style={{ fontSize: 36 }}>
+                      {price.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  ) : hasMkt ? (
+                    <div className="num font-extrabold text-white leading-none" style={{ fontSize: 36 }}>—</div>
+                  ) : (
+                    <div className="animate-pulse h-9 w-40 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                  )}
+                </div>
+
+                {/* Change */}
+                {(hasPrice || hasMkt) && (
+                  <div className="flex flex-col gap-0.5">
+                    <div className="num font-bold flex items-center gap-1" style={{ fontSize: 20, color: isUp ? '#00d4aa' : '#ff4757' }}>
+                      {isUp ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                      {chgPct >= 0 ? '+' : ''}{chgPct.toFixed(2)}%
+                    </div>
+                    {hasPrice && (
+                      <div className="num font-semibold" style={{ fontSize: 13, color: isUp ? '#00d4aa' : '#ff4757' }}>
+                        {chg >= 0 ? '+' : ''}{chg.toFixed(2)} نقطة
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* High / Low when TASI is live */}
+                {hasPrice && tasiData && (
+                  <div className="hidden sm:flex gap-6 text-[11px]" style={{ borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: 20, marginRight: 4 }}>
+                    <div className="flex flex-col gap-1">
+                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>أعلى</span>
+                      <span className="num font-bold text-white">{tasiData.high.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <div className={`flex items-center gap-1 text-xl font-bold num ${isUp ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
-                        {isUp ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                        {tasiData.changePercent >= 0 ? '+' : ''}{tasiData.changePercent.toFixed(2)}%
-                      </div>
-                      <div className={`text-sm num font-semibold ${isUp ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
-                        {tasiData.change >= 0 ? '+' : ''}{tasiData.change.toFixed(2)} نقطة
-                      </div>
+                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>أدنى</span>
+                      <span className="num font-bold text-white">{tasiData.low.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
                     </div>
-                    <div className="hidden sm:flex flex-col gap-1.5 border-r border-app-border pr-5 text-[11px]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-app-text-muted">أعلى</span>
-                        <span className="num font-bold text-app-text">{tasiData.high.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-app-text-muted">أدنى</span>
-                        <span className="num font-bold text-app-text">{tasiData.low.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : hasBreadth ? (
-                  /* ── Derived market breadth (fallback when ^TASI unavailable) ── */
-                  <div className="flex flex-wrap items-center gap-6">
-                    <div className="flex flex-col gap-1">
-                      <div className={`flex items-center gap-1 text-xl font-bold num ${isUp ? 'text-[#00d4aa]' : 'text-[#ff4757]'}`}>
-                        {isUp ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                        {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%
-                      </div>
-                      <div className="text-[10px] text-app-text-muted">متوسط تغيّر الأسهم المفحوصة</div>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="text-[#00d4aa] font-extrabold num text-xl">{gainers}</span>
-                        <span className="text-[10px] text-app-text-muted">صاعد</span>
-                      </div>
-                      <div className="h-8 w-px bg-app-border" />
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="text-[#ff4757] font-extrabold num text-xl">{losers}</span>
-                        <span className="text-[10px] text-app-text-muted">هابط</span>
-                      </div>
-                      <div className="h-8 w-px bg-app-border" />
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="text-app-text-muted font-extrabold num text-xl">{unchanged}</span>
-                        <span className="text-[10px] text-app-text-muted">مستقر</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* ── Skeleton while first load ── */
-                  <div className="flex items-end gap-6 animate-pulse">
-                    <div className="h-10 w-36 bg-app-bg rounded-lg" />
-                    <div className="h-6 w-24 bg-app-bg rounded-lg" />
                   </div>
                 )}
               </div>
+
+              {/* Market breadth — always shown when stocks loaded */}
+              {hasMkt && (
+                <div className="flex items-center gap-0 mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                  {[
+                    { label: 'صاعد',  count: gainers,   color: '#00d4aa', dot: '🟢' },
+                    { label: 'هابط',  count: losers,    color: '#ff4757', dot: '🔴' },
+                    { label: 'مستقر', count: unchanged, color: 'rgba(255,255,255,0.4)', dot: '⚪' },
+                  ].map((item, i) => (
+                    <React.Fragment key={item.label}>
+                      {i > 0 && <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.08)', margin: '0 20px' }} />}
+                      <div className="flex items-center gap-2">
+                        <span style={{ fontSize: 14 }}>{item.dot}</span>
+                        <div>
+                          <div className="num font-extrabold" style={{ fontSize: 18, color: item.color, lineHeight: 1 }}>{item.count}</div>
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{item.label}</div>
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
             </motion.div>
           );
         })()}
