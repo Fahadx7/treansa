@@ -541,21 +541,31 @@ app.get("/api/history/:symbol", async (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
-// ── Dedicated TASI index endpoint (no symbol validation, index-specific)
+// ── Dedicated TASI index endpoint — uses chart API (v8) which reliably returns
+//    index data; v7 quote API often returns null for ^TASI from server-side.
 app.get("/api/tasi", async (req, res) => {
     try {
-        const tasi = await yfQuote('^TASI', 8000);
-        if (!tasi || !tasi.regularMarketPrice) {
+        // v8 chart meta always contains regularMarketPrice for indices
+        const period1 = Math.floor((Date.now() - 7 * 24 * 3600 * 1000) / 1000);
+        const { meta } = await yfChart('^TASI', '1d', period1);
+
+        const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
+        if (!price || price <= 0) {
             return res.status(503).json({ success: false, error: 'بيانات تاسي غير متوفرة حالياً' });
         }
+
+        const previousClose = meta.chartPreviousClose ?? price;
+        const change        = price - previousClose;
+        const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
+
         res.json({
-            success: true,
-            price:         tasi.regularMarketPrice,
-            change:        tasi.regularMarketChange        ?? 0,
-            changePercent: tasi.regularMarketChangePercent ?? 0,
-            high:          tasi.regularMarketDayHigh       ?? tasi.regularMarketPrice,
-            low:           tasi.regularMarketDayLow        ?? tasi.regularMarketPrice,
-            volume:        tasi.regularMarketVolume        ?? 0,
+            success:       true,
+            price,
+            change:        meta.regularMarketChange        ?? change,
+            changePercent: meta.regularMarketChangePercent ?? changePercent,
+            high:          meta.regularMarketDayHigh       ?? price,
+            low:           meta.regularMarketDayLow        ?? price,
+            volume:        meta.regularMarketVolume        ?? 0,
             time:          new Date().toISOString(),
         });
     } catch (e: any) {
