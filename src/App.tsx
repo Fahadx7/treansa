@@ -1913,6 +1913,7 @@ function App() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [triggeredAlerts, setTriggeredAlerts] = useState<CustomAlert[]>([]);
+  const [tasiLastUpdated, setTasiLastUpdated] = useState<Date | null>(null);
   const isScanningRef = useRef(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
@@ -2249,7 +2250,7 @@ function App() {
       }
 
       const marketIndex: TASIData | null = tasiResult;
-      if (marketIndex) setTasiData(marketIndex);
+      if (marketIndex) { setTasiData(marketIndex); setTasiLastUpdated(new Date()); }
 
       saveCache(allStocks, marketIndex);
       buildAndSetStatus(allStocks, marketIndex);
@@ -2324,6 +2325,21 @@ function App() {
   useEffect(() => {
     runMarketScan();
     const interval = setInterval(runMarketScan, 15 * 60 * 1000); // refresh every 15 min
+    return () => clearInterval(interval);
+  }, []);
+
+  // Dedicated TASI refresh every 5 minutes (more frequent than full scan)
+  const refreshTasi = async () => {
+    try {
+      const data = await fetchTASI();
+      setTasiData(data);
+      setTasiLastUpdated(new Date());
+    } catch { /* silent — full scan will retry */ }
+  };
+
+  useEffect(() => {
+    refreshTasi();
+    const interval = setInterval(refreshTasi, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -2706,14 +2722,15 @@ function App() {
           const gainers   = tickers.filter(s => s.change > 0).length;
           const losers    = tickers.filter(s => s.change < 0).length;
           const unchanged = tickers.length - gainers - losers;
-          const avgChange = tickers.length
-            ? tickers.reduce((sum, s) => sum + s.change, 0) / tickers.length : 0;
           const price     = tasiData?.price ?? 0;
-          const chg       = tasiData?.change ?? avgChange;
-          const chgPct    = tasiData?.changePercent ?? avgChange;
+          const chg       = tasiData?.change ?? 0;
+          const chgPct    = tasiData?.changePercent ?? 0;
           const isUp      = chgPct >= 0;
           const hasPrice  = price > 0;
           const hasMkt    = tickers.length > 0;
+          const updatedStr = tasiLastUpdated
+            ? tasiLastUpdated.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+            : null;
 
           return (
             <motion.div
@@ -2728,7 +2745,7 @@ function App() {
               }}
             >
               {/* Title row */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2.5">
                   <div style={{ padding: 7, background: 'rgba(0,212,170,0.1)', borderRadius: 8 }}>
                     <BarChart3 className="w-4 h-4" style={{ color: '#00d4aa' }} />
@@ -2738,77 +2755,81 @@ function App() {
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>TASI · Saudi All Share Index</div>
                   </div>
                 </div>
-                {!hasPrice && hasMkt && (
-                  <span style={{ fontSize: 10, color: 'rgba(245,158,11,0.8)', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: 999 }}>
-                    مشتق من السوق
-                  </span>
+                <button
+                  onClick={refreshTasi}
+                  title="تحديث مؤشر تاسي"
+                  className="flex items-center justify-center w-7 h-7 rounded-full transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  <RefreshCw className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                </button>
+              </div>
+
+              {/* ── Index value (main number) ── */}
+              <div className="mb-1">
+                {hasPrice ? (
+                  <div className="num font-extrabold text-white leading-none" style={{ fontSize: 36 }}>
+                    {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                ) : hasMkt ? (
+                  <div className="num font-extrabold leading-none" style={{ fontSize: 36, color: 'rgba(255,255,255,0.25)' }}>—</div>
+                ) : (
+                  <div className="animate-pulse h-10 w-44 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
                 )}
               </div>
 
-              {/* Main values row */}
-              <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-                {/* Index value */}
-                <div>
-                  {hasPrice ? (
-                    <div className="num font-extrabold text-white leading-none" style={{ fontSize: 36 }}>
-                      {price.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  ) : hasMkt ? (
-                    <div className="num font-extrabold text-white leading-none" style={{ fontSize: 36 }}>—</div>
-                  ) : (
-                    <div className="animate-pulse h-9 w-40 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
+              {/* ── Change row ── */}
+              {hasPrice && (
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="num font-semibold" style={{ fontSize: 15, color: isUp ? '#00d4aa' : '#ff4757' }}>
+                    {chg >= 0 ? '+' : ''}{chg.toFixed(2)}
+                  </span>
+                  <span
+                    className="num font-bold flex items-center gap-0.5 px-2 py-0.5 rounded-full"
+                    style={{
+                      fontSize: 13,
+                      color: isUp ? '#00d4aa' : '#ff4757',
+                      background: isUp ? 'rgba(0,212,170,0.1)' : 'rgba(255,71,87,0.1)',
+                    }}
+                  >
+                    {isUp ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                    {chgPct >= 0 ? '+' : ''}{chgPct.toFixed(2)}%
+                  </span>
+                  {tasiData && (
+                    <span className="hidden sm:flex items-center gap-3 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)', marginRight: 8, borderRight: '1px solid rgba(255,255,255,0.08)', paddingRight: 12 }}>
+                      <span>أعلى <span className="num text-white font-semibold">{tasiData.high.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></span>
+                      <span>أدنى <span className="num text-white font-semibold">{tasiData.low.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></span>
+                    </span>
                   )}
                 </div>
+              )}
+              {!hasPrice && hasMkt && <div className="mb-4" />}
 
-                {/* Change */}
-                {(hasPrice || hasMkt) && (
-                  <div className="flex flex-col gap-0.5">
-                    <div className="num font-bold flex items-center gap-1" style={{ fontSize: 20, color: isUp ? '#00d4aa' : '#ff4757' }}>
-                      {isUp ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                      {chgPct >= 0 ? '+' : ''}{chgPct.toFixed(2)}%
-                    </div>
-                    {hasPrice && (
-                      <div className="num font-semibold" style={{ fontSize: 13, color: isUp ? '#00d4aa' : '#ff4757' }}>
-                        {chg >= 0 ? '+' : ''}{chg.toFixed(2)} نقطة
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* High / Low when TASI is live */}
-                {hasPrice && tasiData && (
-                  <div className="hidden sm:flex gap-6 text-[11px]" style={{ borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: 20, marginRight: 4 }}>
-                    <div className="flex flex-col gap-1">
-                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>أعلى</span>
-                      <span className="num font-bold text-white">{tasiData.high.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>أدنى</span>
-                      <span className="num font-bold text-white">{tasiData.low.toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Market breadth — always shown when stocks loaded */}
+              {/* ── Market breadth ── */}
               {hasMkt && (
-                <div className="flex items-center gap-0 mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="flex items-center gap-0 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
                   {[
                     { label: 'صاعد',  count: gainers,   color: '#00d4aa', dot: '🟢' },
                     { label: 'هابط',  count: losers,    color: '#ff4757', dot: '🔴' },
-                    { label: 'مستقر', count: unchanged, color: 'rgba(255,255,255,0.4)', dot: '⚪' },
+                    { label: 'مستقر', count: unchanged, color: 'rgba(255,255,255,0.35)', dot: '⚪' },
                   ].map((item, i) => (
                     <React.Fragment key={item.label}>
-                      {i > 0 && <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.08)', margin: '0 20px' }} />}
-                      <div className="flex items-center gap-2">
-                        <span style={{ fontSize: 14 }}>{item.dot}</span>
-                        <div>
-                          <div className="num font-extrabold" style={{ fontSize: 18, color: item.color, lineHeight: 1 }}>{item.count}</div>
-                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{item.label}</div>
-                        </div>
+                      {i > 0 && <div style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.08)', margin: '0 18px' }} />}
+                      <div className="flex items-center gap-1.5">
+                        <span style={{ fontSize: 13 }}>{item.dot}</span>
+                        <span className="num font-bold" style={{ fontSize: 16, color: item.color }}>{item.count}</span>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{item.label}</span>
                       </div>
                     </React.Fragment>
                   ))}
+
+                  {/* Last updated */}
+                  {updatedStr && (
+                    <div className="mr-auto flex items-center gap-1" style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                      <Clock className="w-3 h-3" />
+                      آخر تحديث: {updatedStr}
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>
