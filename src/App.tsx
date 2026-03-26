@@ -1978,6 +1978,9 @@ function App() {
   const isScanningRef = useRef(false);
   // Tracks symbols already sent to Telegram in current session — prevents duplicate alerts
   const sentRadarAlertsRef = useRef(new Set<string>());
+  // Rolling TASI price history for sparkline (last 20 data points)
+  const tasiHistoryRef = useRef<number[]>([]);
+  const [themeSpin, setThemeSpin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true; // Default to dark
@@ -1993,7 +1996,11 @@ function App() {
     }
   }, [isDarkMode]);
 
-  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const toggleTheme = () => {
+    setIsDarkMode(v => !v);
+    setThemeSpin(true);
+    setTimeout(() => setThemeSpin(false), 400);
+  };
   const [activeTab, setActiveTab] = useState<'active' | 'watchlist' | 'all' | 'margin'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [watchlist, setWatchlist] = useState<string[]>([]);
@@ -2459,6 +2466,13 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Accumulate TASI prices for sparkline (max 20 points)
+  useEffect(() => {
+    if (tasiData && tasiData.price > 0) {
+      tasiHistoryRef.current = [...tasiHistoryRef.current, tasiData.price].slice(-20);
+    }
+  }, [tasiData]);
+
   const TradeRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const trade = status?.activeTrades[index];
     if (!trade) return null;
@@ -2673,27 +2687,29 @@ function App() {
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header
-        className="sticky top-0 z-[80] safe-top"
+        className="header-premium sticky top-0 z-[80] safe-top overflow-hidden"
         style={{
-          background: '#0d1117',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          height: 64,
+          background: 'linear-gradient(135deg, #0a0e1a 0%, #0d1528 50%, #0a1628 100%)',
+          borderBottom: '1px solid rgba(99,179,237,0.15)',
+          boxShadow: '0 1px 30px rgba(0,0,0,0.5)',
+          height: 68,
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between gap-3 relative z-10">
 
           {/* ── Logo (right in RTL) ── */}
           <div className="flex items-center gap-3 shrink-0">
-            <div style={{ padding: 8, background: 'rgba(0,212,170,0.12)', borderRadius: 10 }}>
-              <Radar className="w-5 h-5" style={{ color: '#00d4aa' }} />
+            <div
+              className="logo-pulse flex items-center justify-center shrink-0"
+              style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(0,212,170,0.15)', border: '1px solid rgba(0,212,170,0.3)' }}
+            >
+              <BarChart3 className="w-5 h-5" style={{ color: '#00d4aa' }} />
             </div>
             <div>
-              <div className="font-extrabold text-white leading-tight" style={{ fontSize: 15, letterSpacing: '-0.02em' }}>
-                trandsa ترندسا
+              <div className="font-extrabold text-white leading-tight" style={{ fontSize: 18, letterSpacing: '-0.02em', fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
+                trandsa <span style={{ color: 'rgba(255,255,255,0.85)' }}>ترندسا</span>
               </div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.08em' }}>
+              <div style={{ fontSize: 11, color: '#4a9eff', letterSpacing: '0.04em', fontWeight: 500 }}>
                 منصة التداول الذكية
               </div>
             </div>
@@ -2702,74 +2718,66 @@ function App() {
           {/* ── Spacer ── */}
           <div className="flex-1" />
 
-          {/* ── Nav / status area (center-ish) ── */}
-          <div className="hidden md:flex items-center gap-3">
-            {/* Delay badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold"
-                 style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b' }}>
-              <Clock className="w-3 h-3" />
+          {/* ── Status badges (desktop) ── */}
+          <div className="hidden md:flex items-center gap-2.5">
+            {/* Delay badge with pulsing dot */}
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold"
+              style={{ background: 'rgba(244,162,97,0.15)', border: '1px solid rgba(244,162,97,0.3)', color: '#f4a261' }}
+            >
+              <span className="pulse-dot w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#f4a261', display: 'inline-block' }} />
               بيانات مؤخرة ~15 دقيقة
             </div>
 
-            {/* Refresh */}
+            {/* Refresh button */}
             <button
               onClick={startScan}
               disabled={isLoadingData}
               title="تحديث البيانات"
-              className="flex items-center justify-center w-9 h-9 rounded-full transition-colors disabled:opacity-40"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+              className="btn-icon disabled:opacity-40"
             >
-              <RefreshCw className={`w-4 h-4 text-white ${isLoadingData ? 'animate-spin' : ''}`} />
+              <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.6)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
             </button>
 
             {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              title={isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
-              className="flex items-center justify-center w-9 h-9 rounded-full transition-colors"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-            >
+            <button onClick={toggleTheme} title={isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'} className="btn-icon">
               {isDarkMode
-                ? <Sun className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.6)' }} />
-                : <Moon className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.6)' }} />}
+                ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />}
             </button>
           </div>
 
           {/* ── Action buttons (left in RTL) ── */}
-          <div className="flex items-center gap-2 mr-3">
-            {/* My Alerts bell */}
+          <div className="flex items-center gap-2 mr-2">
+            {/* Bell with red dot */}
             {(() => {
               const activeCount = (JSON.parse(localStorage.getItem('saudi_stock_alerts') || '[]') as CustomAlert[]).filter(a => !a.triggered).length;
               return (
                 <button
                   onClick={() => setShowAlertsModal(true)}
                   title="تنبيهاتي"
-                  className="relative flex items-center justify-center w-9 h-9 rounded-full transition-colors"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  className="btn-icon relative"
                 >
-                  <Bell className="w-4 h-4" style={{ color: activeCount > 0 ? '#a855f7' : 'rgba(255,255,255,0.6)' }} />
+                  <Bell className="w-4 h-4" style={{ color: activeCount > 0 ? '#f87171' : 'rgba(255,255,255,0.6)' }} />
                   {activeCount > 0 && (
                     <span
-                      className="absolute -top-1 -right-1 flex items-center justify-center text-white font-bold"
-                      style={{ background: '#a855f7', borderRadius: 999, minWidth: 16, height: 16, fontSize: 9, padding: '0 4px' }}
+                      className="absolute flex items-center justify-center text-white font-bold"
+                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 15, height: 15, fontSize: 8, padding: '0 3px', top: -4, right: -4, border: '1.5px solid #0d1528' }}
                     >
-                      {activeCount}
+                      {activeCount > 9 ? '9+' : activeCount}
                     </span>
                   )}
                 </button>
               );
             })()}
 
-            {/* Telegram */}
+            {/* Telegram button */}
             <a
               href="https://t.me/RadarsaudiiBot"
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-2 font-bold transition-all whitespace-nowrap"
-              style={{
-                height: 36, padding: '0 14px', borderRadius: 999,
-                background: '#00d4aa', color: '#0d1117', fontSize: 13,
-              }}
+              className="btn-telegram flex items-center gap-2 font-bold whitespace-nowrap text-white"
+              style={{ height: 36, padding: '0 16px', borderRadius: 10, fontSize: 13 }}
             >
               <Send className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">قناة التليجرام</span>
@@ -2779,8 +2787,8 @@ function App() {
             {user ? (
               <button
                 onClick={() => logout()}
-                className="flex items-center justify-center rounded-full overflow-hidden transition-opacity hover:opacity-80"
-                style={{ width: 36, height: 36, border: '2px solid rgba(0,212,170,0.4)' }}
+                className="flex items-center justify-center rounded-full overflow-hidden transition-opacity hover:opacity-75 shrink-0"
+                style={{ width: 36, height: 36, border: '2px solid rgba(0,212,170,0.5)', boxShadow: '0 0 8px rgba(0,212,170,0.2)' }}
                 title="تسجيل الخروج"
               >
                 <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -2788,12 +2796,8 @@ function App() {
             ) : (
               <button
                 onClick={() => loginWithGoogle()}
-                className="flex items-center gap-2 font-bold transition-all"
-                style={{
-                  height: 36, padding: '0 14px', borderRadius: 999,
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
-                  color: 'rgba(255,255,255,0.85)', fontSize: 13,
-                }}
+                className="flex items-center gap-2 font-bold"
+                style={{ height: 36, padding: '0 14px', borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.85)', fontSize: 13, transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)' }}
               >
                 <User className="w-4 h-4" />
                 <span className="hidden sm:inline">دخول</span>
@@ -2801,21 +2805,14 @@ function App() {
             )}
 
             {/* Mobile: refresh + theme */}
-            <div className="flex md:hidden items-center gap-1">
-              <button
-                onClick={startScan}
-                disabled={isLoadingData}
-                className="flex items-center justify-center w-9 h-9 rounded-full disabled:opacity-40"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-              >
-                <RefreshCw className={`w-4 h-4 text-white ${isLoadingData ? 'animate-spin' : ''}`} />
+            <div className="flex md:hidden items-center gap-1.5">
+              <button onClick={startScan} disabled={isLoadingData} className="btn-icon disabled:opacity-40">
+                <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.6)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
               </button>
-              <button
-                onClick={toggleTheme}
-                className="flex items-center justify-center w-9 h-9 rounded-full"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-              >
-                {isDarkMode ? <Sun className="w-4 h-4 text-white/60" /> : <Moon className="w-4 h-4 text-white/60" />}
+              <button onClick={toggleTheme} className="btn-icon">
+                {isDarkMode
+                  ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                  : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />}
               </button>
             </div>
           </div>
@@ -2848,104 +2845,147 @@ function App() {
             ? tasiLastUpdated.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
             : null;
 
+          // ── Sparkline SVG ──
+          const sparkPrices = tasiHistoryRef.current;
+          const SparkLine = () => {
+            if (sparkPrices.length < 2) return null;
+            const W = 100, H = 44;
+            const mn = Math.min(...sparkPrices), mx = Math.max(...sparkPrices);
+            const range = mx - mn || 1;
+            const pts = sparkPrices.map((v, i) => {
+              const x = (i / (sparkPrices.length - 1)) * W;
+              const y = H - ((v - mn) / range) * H;
+              return `${x},${y}`;
+            });
+            const polyline = pts.join(' ');
+            const areaPath = `M${pts[0]} L${pts.join(' L')} L${W},${H} L0,${H} Z`;
+            const lineColor = isUp ? '#00c896' : '#ff3d5a';
+            return (
+              <svg viewBox={`0 0 ${W} ${H}`} width={100} height={44} className="tasi-sparkline" style={{ overflow: 'visible' }}>
+                <defs>
+                  <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
+                    <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d={areaPath} fill="url(#spark-grad)" />
+                <polyline points={polyline} fill="none" stroke={lineColor} strokeWidth="2" />
+              </svg>
+            );
+          };
+
           return (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
               style={{
-                background: '#161b22',
+                background: 'linear-gradient(135deg, #0d1928 0%, #111f35 100%)',
                 borderRadius: 16,
+                border: '1px solid rgba(99,179,237,0.1)',
                 borderRight: '3px solid #00d4aa',
                 padding: '20px 24px',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
               }}
             >
-              {/* Title row */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div style={{ padding: 7, background: 'rgba(0,212,170,0.1)', borderRadius: 8 }}>
-                    <BarChart3 className="w-4 h-4" style={{ color: '#00d4aa' }} />
-                  </div>
-                  <div>
-                    <div className="font-bold text-white" style={{ fontSize: 14 }}>المؤشر العام - تاسي</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>TASI · Saudi All Share Index</div>
-                  </div>
+              {/* ── Title row ── */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white" style={{ fontSize: 14, fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
+                    المؤشر العام - تاسي
+                  </span>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.06em' }}>TASI</span>
                 </div>
-                <button
-                  onClick={refreshTasi}
-                  title="تحديث مؤشر تاسي"
-                  className="flex items-center justify-center w-7 h-7 rounded-full transition-colors"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-                >
-                  <RefreshCw className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.4)' }} />
-                </button>
-              </div>
-
-              {/* ── Index value (main number) ── */}
-              <div className="mb-1">
-                {hasPrice ? (
-                  <div className="num font-extrabold text-white leading-none" style={{ fontSize: 36 }}>
-                    {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                ) : hasMkt ? (
-                  <div className="num font-extrabold leading-none" style={{ fontSize: 36, color: 'rgba(255,255,255,0.25)' }}>—</div>
-                ) : (
-                  <div className="animate-pulse h-10 w-44 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
-                )}
-              </div>
-
-              {/* ── Change row ── */}
-              {hasPrice && (
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="num font-semibold" style={{ fontSize: 15, color: isUp ? '#00d4aa' : '#ff4757' }}>
-                    {chg >= 0 ? '+' : ''}{chg.toFixed(2)}
-                  </span>
-                  <span
-                    className="num font-bold flex items-center gap-0.5 px-2 py-0.5 rounded-full"
-                    style={{
-                      fontSize: 13,
-                      color: isUp ? '#00d4aa' : '#ff4757',
-                      background: isUp ? 'rgba(0,212,170,0.1)' : 'rgba(255,71,87,0.1)',
-                    }}
-                  >
-                    {isUp ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                    {chgPct >= 0 ? '+' : ''}{chgPct.toFixed(2)}%
-                  </span>
-                  {tasiData && (
-                    <span className="hidden sm:flex items-center gap-3 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)', marginRight: 8, borderRight: '1px solid rgba(255,255,255,0.08)', paddingRight: 12 }}>
-                      <span>أعلى <span className="num text-white font-semibold">{tasiData.high.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></span>
-                      <span>أدنى <span className="num text-white font-semibold">{tasiData.low.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></span>
-                    </span>
+                <div className="flex items-center gap-2">
+                  {updatedStr && (
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{updatedStr}</span>
                   )}
+                  <button
+                    onClick={refreshTasi}
+                    title="تحديث"
+                    className="btn-icon"
+                    style={{ width: 28, height: 28, borderRadius: 8 }}
+                  >
+                    <RefreshCw className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                  </button>
                 </div>
-              )}
-              {!hasPrice && hasMkt && <div className="mb-4" />}
+              </div>
+
+              {/* ── Main content: number + sparkline ── */}
+              <div className="flex items-end justify-between">
+                <div>
+                  {/* Big price number */}
+                  <div className="mb-1">
+                    {hasPrice ? (
+                      <div
+                        className="num leading-none text-white"
+                        style={{ fontSize: 42, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em' }}
+                      >
+                        {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    ) : hasMkt ? (
+                      <div className="num leading-none" style={{ fontSize: 42, fontWeight: 800, color: 'rgba(255,255,255,0.2)' }}>—</div>
+                    ) : (
+                      <div className="animate-pulse h-12 w-48 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                    )}
+                  </div>
+
+                  {/* Change row */}
+                  {hasPrice && (
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className="num font-bold flex items-center gap-1"
+                        style={{ fontSize: 18, color: isUp ? '#00c896' : '#ff3d5a' }}
+                      >
+                        {isUp ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                        {chg >= 0 ? '+' : ''}{chg.toFixed(2)}
+                      </span>
+                      <span
+                        className="num font-semibold px-2 py-0.5 rounded-full"
+                        style={{
+                          fontSize: 14,
+                          color: isUp ? '#00c896' : '#ff3d5a',
+                          background: isUp ? 'rgba(0,200,150,0.12)' : 'rgba(255,61,90,0.12)',
+                        }}
+                      >
+                        {chgPct >= 0 ? '+' : ''}{chgPct.toFixed(2)}%
+                      </span>
+                      {tasiData && tasiData.high > 0 && (
+                        <span className="hidden sm:flex items-center gap-3 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)', paddingRight: 10, borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 2 }}>
+                          <span>H <span className="num text-white font-semibold">{tasiData.high.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></span>
+                          <span>L <span className="num text-white font-semibold">{tasiData.low.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {!hasPrice && hasMkt && <div style={{ height: 28 }} />}
+                </div>
+
+                {/* Sparkline on the left (RTL: visually right side) */}
+                <div className="opacity-80 mb-1">
+                  <SparkLine />
+                </div>
+              </div>
 
               {/* ── Market breadth ── */}
               {hasMkt && (
-                <div className="flex items-center gap-0 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="flex items-center gap-0 mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
                   {[
-                    { label: 'صاعد',  count: gainers,   color: '#00d4aa', dot: '🟢' },
-                    { label: 'هابط',  count: losers,    color: '#ff4757', dot: '🔴' },
-                    { label: 'مستقر', count: unchanged, color: 'rgba(255,255,255,0.35)', dot: '⚪' },
+                    { label: 'صاعد',  count: gainers,   color: '#00c896', bg: 'rgba(0,200,150,0.1)', dot: '🟢' },
+                    { label: 'هابط',  count: losers,    color: '#ff3d5a', bg: 'rgba(255,61,90,0.1)',  dot: '🔴' },
+                    { label: 'مستقر', count: unchanged, color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.06)', dot: '⚪' },
                   ].map((item, i) => (
                     <React.Fragment key={item.label}>
-                      {i > 0 && <div style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.08)', margin: '0 18px' }} />}
-                      <div className="flex items-center gap-1.5">
-                        <span style={{ fontSize: 13 }}>{item.dot}</span>
-                        <span className="num font-bold" style={{ fontSize: 16, color: item.color }}>{item.count}</span>
+                      {i > 0 && <div style={{ width: 1, height: 30, background: 'rgba(255,255,255,0.07)', margin: '0 16px' }} />}
+                      <div className="flex items-center gap-2 px-2 py-1 rounded-lg" style={{ background: item.bg }}>
+                        <span style={{ fontSize: 12 }}>{item.dot}</span>
+                        <span className="num font-bold" style={{ fontSize: 18, color: item.color, fontFamily: "'JetBrains Mono', monospace" }}>
+                          {item.count}
+                        </span>
                         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{item.label}</span>
                       </div>
                     </React.Fragment>
                   ))}
-
-                  {/* Last updated */}
-                  {updatedStr && (
-                    <div className="mr-auto flex items-center gap-1" style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
-                      <Clock className="w-3 h-3" />
-                      آخر تحديث: {updatedStr}
-                    </div>
-                  )}
                 </div>
               )}
             </motion.div>
