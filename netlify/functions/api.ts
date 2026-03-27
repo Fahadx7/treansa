@@ -556,33 +556,76 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 // ── Dedicated TASI index endpoint — uses chart API (v8) which reliably returns
 //    index data; v7 quote API often returns null for ^TASI from server-side.
 app.get("/api/tasi", async (req, res) => {
+    const tryExtractPrice = (meta: any): number => {
+        // Use || not ?? — regularMarketPrice can be 0 (market closed) so ?? won't fall through
+        return meta.regularMarketPrice || meta.chartPreviousClose || meta.previousClose || 0;
+    };
+
+    // Attempt 1: v8 chart via query1
     try {
-        // v8 chart meta always contains regularMarketPrice for indices
         const period1 = Math.floor((Date.now() - 7 * 24 * 3600 * 1000) / 1000);
         const { meta } = await yfChart('^TASI', '1d', period1);
-
-        const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
-        if (!price || price <= 0) {
-            return res.status(503).json({ success: false, error: 'بيانات تاسي غير متوفرة حالياً' });
+        const price = tryExtractPrice(meta);
+        if (price > 1000) {
+            const previousClose = meta.chartPreviousClose || meta.previousClose || price;
+            const change        = price - previousClose;
+            const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
+            return res.json({
+                success: true, price,
+                change:        meta.regularMarketChange        || change,
+                changePercent: meta.regularMarketChangePercent || changePercent,
+                high:          meta.regularMarketDayHigh       || price,
+                low:           meta.regularMarketDayLow        || price,
+                volume:        meta.regularMarketVolume        || 0,
+                time:          new Date().toISOString(),
+            });
         }
+    } catch { /* fall through */ }
 
-        const previousClose = meta.chartPreviousClose ?? price;
-        const change        = price - previousClose;
-        const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
+    // Attempt 2: v8 chart via query2 (no crumb)
+    try {
+        const period1 = Math.floor((Date.now() - 7 * 24 * 3600 * 1000) / 1000);
+        const period2 = Math.floor(Date.now() / 1000);
+        const url2 = `https://query2.finance.yahoo.com/v8/finance/chart/%5ETASI?interval=1d&period1=${period1}&period2=${period2}`;
+        const r2 = await fetchWithTimeout(url2, { headers: YF_HEADERS, timeoutMs: 8000 });
+        if (r2.ok) {
+            const data: any = await r2.json();
+            const meta = data?.chart?.result?.[0]?.meta;
+            const price = meta ? tryExtractPrice(meta) : 0;
+            if (price > 1000) {
+                const prev = meta.chartPreviousClose || meta.previousClose || price;
+                return res.json({
+                    success: true, price,
+                    change:        (meta.regularMarketChange)        || (price - prev),
+                    changePercent: (meta.regularMarketChangePercent) || ((price - prev) / prev * 100),
+                    high:   meta.regularMarketDayHigh || price,
+                    low:    meta.regularMarketDayLow  || price,
+                    volume: meta.regularMarketVolume  || 0,
+                    time:   new Date().toISOString(),
+                });
+            }
+        }
+    } catch { /* fall through */ }
 
-        res.json({
-            success:       true,
-            price,
-            change:        meta.regularMarketChange        ?? change,
-            changePercent: meta.regularMarketChangePercent ?? changePercent,
-            high:          meta.regularMarketDayHigh       ?? price,
-            low:           meta.regularMarketDayLow        ?? price,
-            volume:        meta.regularMarketVolume        ?? 0,
-            time:          new Date().toISOString(),
-        });
-    } catch (e: any) {
-        res.status(500).json({ success: false, error: e.message });
-    }
+    // Attempt 3: v7 quote
+    try {
+        const quotes = await yfQuote(['^TASI'], 8000);
+        const q = Array.isArray(quotes) ? quotes[0] : quotes;
+        const price = q?.regularMarketPrice || 0;
+        if (price > 1000) {
+            return res.json({
+                success: true, price,
+                change:        q.regularMarketChange        || 0,
+                changePercent: q.regularMarketChangePercent || 0,
+                high:   q.regularMarketDayHigh || price,
+                low:    q.regularMarketDayLow  || price,
+                volume: q.regularMarketVolume  || 0,
+                time:   new Date().toISOString(),
+            });
+        }
+    } catch { /* fall through */ }
+
+    return res.status(503).json({ success: false, error: 'بيانات تاسي غير متوفرة حالياً' });
 });
 
 // ── Lightweight batch quotes (browser → Netlify → Yahoo Finance, no CORS issues)
