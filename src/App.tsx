@@ -36,11 +36,7 @@ import {
   Moon,
   Newspaper,
   Search,
-  List as ListIcon,
-  Sparkles,
-  X,
-  Copy,
-  Check
+  List as ListIcon
 } from 'lucide-react';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
@@ -1957,209 +1953,6 @@ const AlertsModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
-// ─── Design Agent Drawer ──────────────────────────────────────────────────────
-
-const DA_CHIPS = [
-  'حسّن تصميم كارت السهم',
-  'أفضل ألوان للإشارات الصاعدة والهابطة',
-  'كيف أجعل الأرقام أوضح في الداركمود؟',
-  'تصميم modal احترافي للتحليل الفني',
-  'أنيمشن لتحديث البيانات في الوقت الفعلي',
-  'تحسين تجربة الموبايل لجدول الأسهم',
-];
-
-interface DAMessage { role: 'user' | 'assistant'; content: string; }
-
-function CopyBtn({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}
-      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10"
-    >
-      {copied ? <Check className="w-3 h-3 text-[#00d4aa]" /> : <Copy className="w-3 h-3 text-white/40" />}
-    </button>
-  );
-}
-
-function DesignAgentDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [messages, setMessages] = useState<DAMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
-  useEffect(() => { if (open) setTimeout(() => textareaRef.current?.focus(), 300); }, [open]);
-
-  const send = async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || loading) return;
-    const next: DAMessage[] = [...messages, { role: 'user', content: trimmed }];
-    setMessages(next);
-    setInput('');
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/design-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      setMessages([...next, { role: 'assistant', content: data.reply }]);
-    } catch (e: any) {
-      setError(e.message || 'فشل الاتصال');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isEmpty = messages.length === 0;
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-[110] bg-black/50 backdrop-blur-sm"
-          />
-          {/* Drawer */}
-          <motion.div
-            dir="rtl"
-            initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-            className="fixed right-0 top-0 bottom-0 z-[120] flex flex-col w-full max-w-md"
-            style={{ background: '#060b14', borderLeft: '1px solid rgba(99,179,237,0.12)', boxShadow: '-8px 0 40px rgba(0,0,0,0.6)' }}
-          >
-            {/* Header */}
-            <div
-              className="shrink-0 flex items-center gap-3 px-4 h-14"
-              style={{ background: 'linear-gradient(135deg,#0a0e1a,#0d1528)', borderBottom: '1px solid rgba(99,179,237,0.12)' }}
-            >
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{ background: 'rgba(0,212,170,0.15)', border: '1px solid rgba(0,212,170,0.3)' }}>
-                <Sparkles className="w-4 h-4" style={{ color: '#00d4aa' }} />
-              </div>
-              <div className="flex-1">
-                <div className="font-bold text-white text-sm leading-tight">Design Agent</div>
-                <div className="text-[10px]" style={{ color: '#4a9eff' }}>مساعد تصميم ترندسا</div>
-              </div>
-              <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'rgba(0,212,170,0.1)', border: '1px solid rgba(0,212,170,0.2)', color: '#00d4aa' }}>
-                claude haiku
-              </span>
-              <button onClick={onClose} className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-white/10">
-                <X className="w-4 h-4 text-white/50" />
-              </button>
-            </div>
-
-            {/* Chat area */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ fontFamily: "'IBM Plex Sans Arabic','Tajawal',sans-serif" }}>
-              {isEmpty && (
-                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center text-center pt-6 pb-4 space-y-3">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(0,212,170,0.1)', border: '1px solid rgba(0,212,170,0.2)', boxShadow: '0 0 24px rgba(0,212,170,0.12)' }}>
-                    <Sparkles className="w-7 h-7" style={{ color: '#00d4aa' }} />
-                  </div>
-                  <div>
-                    <p className="font-bold text-white text-sm">مساعد التصميم الذكي</p>
-                    <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>اسأل عن أي تحسين UI/UX لمنصة ترندسا</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 justify-center pt-2">
-                    {DA_CHIPS.map(chip => (
-                      <button
-                        key={chip}
-                        onClick={() => send(chip)}
-                        className="text-xs px-3 py-1.5 rounded-xl transition-colors"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,212,170,0.4)'; (e.currentTarget as HTMLElement).style.color = '#00d4aa'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.7)'; }}
-                      >
-                        {chip}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-
-              <AnimatePresence initial={false}>
-                {messages.map((msg, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-                    className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
-                  >
-                    {msg.role === 'user' ? (
-                      <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm text-sm text-white"
-                        style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        {msg.content}
-                      </div>
-                    ) : (
-                      <div className="group max-w-[90%] px-3 py-2 rounded-2xl rounded-tl-sm text-sm relative"
-                        style={{ background: 'rgba(0,212,170,0.08)', border: '1px solid rgba(0,212,170,0.2)', color: 'rgba(255,255,255,0.9)' }}>
-                        <div className="absolute top-1.5 left-1.5"><CopyBtn text={msg.content} /></div>
-                        <div className="prose prose-invert prose-sm max-w-none leading-relaxed">
-                          <Markdown>{msg.content}</Markdown>
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {loading && (
-                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-                  <div className="px-3 py-2 rounded-2xl rounded-tl-sm flex items-center gap-2"
-                    style={{ background: 'rgba(0,212,170,0.08)', border: '1px solid rgba(0,212,170,0.2)' }}>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#00d4aa' }} />
-                    <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>جاري التفكير...</span>
-                  </div>
-                </motion.div>
-              )}
-
-              {error && (
-                <div className="text-center text-xs py-2 px-3 rounded-xl mx-auto"
-                  style={{ background: 'rgba(255,61,90,0.1)', border: '1px solid rgba(255,61,90,0.2)', color: '#ff3d5a' }}>
-                  ❌ {error}
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-
-            {/* Input */}
-            <div className="shrink-0 px-3 pb-4 pt-2" style={{ background: 'linear-gradient(to top,#060b14 70%,transparent)' }}>
-              <div className="flex items-end gap-2 px-3 py-2 rounded-2xl"
-                style={{ background: '#0d1421', border: '1px solid rgba(99,179,237,0.15)', boxShadow: '0 0 20px rgba(0,0,0,0.4)' }}>
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
-                  placeholder="اسأل عن أي تحسين تصميمي..."
-                  rows={1}
-                  className="flex-1 bg-transparent resize-none outline-none text-sm text-white placeholder-white/30 leading-relaxed"
-                  style={{ maxHeight: 100, minHeight: 22, fontFamily: 'inherit', fontSize: 14 }}
-                  onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 100) + 'px'; }}
-                />
-                <button
-                  onClick={() => send(input)}
-                  disabled={!input.trim() || loading}
-                  className="shrink-0 flex items-center justify-center w-8 h-8 rounded-xl transition-all disabled:opacity-30"
-                  style={{ background: input.trim() && !loading ? '#00d4aa' : 'rgba(0,212,170,0.2)' }}
-                >
-                  <Send className="w-3.5 h-3.5" style={{ color: input.trim() && !loading ? '#060b14' : '#00d4aa' }} />
-                </button>
-              </div>
-              <p className="text-center text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.2)' }}>Enter للإرسال · Shift+Enter سطر جديد</p>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-}
-
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -2187,7 +1980,6 @@ function App() {
   const sentRadarAlertsRef = useRef(new Set<string>());
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
-  const [showDesignAgent, setShowDesignAgent] = useState(false);
   const [themeSpin, setThemeSpin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
@@ -2880,23 +2672,6 @@ function App() {
       )}
       <TickerTape data={status?.tickerData || []} marketIndex={status?.marketIndex} />
       
-      {/* Design Agent Drawer */}
-      <DesignAgentDrawer open={showDesignAgent} onClose={() => setShowDesignAgent(false)} />
-
-      {/* Design Agent Floating Button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setShowDesignAgent(true)}
-        className="fixed bottom-20 left-6 z-[60] text-white p-4 rounded-2xl shadow-2xl flex items-center gap-2 group"
-        style={{ background: 'linear-gradient(135deg,rgba(0,212,170,0.9),rgba(0,180,140,0.9))', boxShadow: '0 0 24px rgba(0,212,170,0.35)' }}
-      >
-        <Sparkles className="w-5 h-5 shrink-0" />
-        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap font-bold text-sm">
-          Design Agent
-        </span>
-      </motion.button>
-
       {/* Feedback Floating Button */}
       <motion.button
         whileHover={{ scale: 1.05 }}
