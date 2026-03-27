@@ -79,6 +79,27 @@ export function loadLastKnownTasi(): TASIData | null {
   } catch { return null; }
 }
 
+const YF_TASI_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETASI?interval=1d&range=5d';
+
+function parseTasiFromV8Chart(data: any): TASIData | null {
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta) return null;
+  const price: number = meta.regularMarketPrice ?? 0;
+  if (price < 100) return null; // sanity: TASI is always 1,000+
+  const prev: number = meta.chartPreviousClose ?? meta.previousClose ?? price;
+  const change = price - prev;
+  const changePercent = prev ? (change / prev) * 100 : 0;
+  return {
+    price,
+    change,
+    changePercent,
+    high:   meta.regularMarketDayHigh  ?? price,
+    low:    meta.regularMarketDayLow   ?? price,
+    volume: meta.regularMarketVolume   ?? 0,
+    time:   new Date().toISOString(),
+  };
+}
+
 export async function fetchTASI(): Promise<TASIData> {
   // ── Attempt 1: dedicated /api/tasi (v8 chart — most reliable for indices) ──
   try {
@@ -99,15 +120,15 @@ export async function fetchTASI(): Promise<TASIData> {
         return result;
       }
     }
-  } catch { /* fall through to next attempt */ }
+  } catch { /* fall through */ }
 
-  // ── Attempt 2: quotes CORS proxy with ^TASI symbol (v7) ──
+  // ── Attempt 2: /api/quotes with ^TASI (v7) ──
   try {
     const res = await fetch('/api/quotes?symbols=%5ETASI');
     if (res.ok) {
       const data = await res.json();
       const q = Array.isArray(data.result) ? data.result[0] : null;
-      if (q?.regularMarketPrice > 0) {
+      if (q?.regularMarketPrice > 100) {
         const result: TASIData = {
           price:         q.regularMarketPrice,
           change:        q.regularMarketChange        ?? 0,
@@ -120,6 +141,29 @@ export async function fetchTASI(): Promise<TASIData> {
         saveLastKnownTasi(result);
         return result;
       }
+    }
+  } catch { /* fall through */ }
+
+  // ── Attempt 3: allorigins.win CORS proxy ──
+  try {
+    const encoded = encodeURIComponent(YF_TASI_URL);
+    const res = await fetch(`https://api.allorigins.win/get?url=${encoded}`, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const wrapper = await res.json();
+      const data = JSON.parse(wrapper.contents ?? '{}');
+      const result = parseTasiFromV8Chart(data);
+      if (result) { saveLastKnownTasi(result); return result; }
+    }
+  } catch { /* fall through */ }
+
+  // ── Attempt 4: corsproxy.io ──
+  try {
+    const encoded = encodeURIComponent(YF_TASI_URL);
+    const res = await fetch(`https://corsproxy.io/?${encoded}`, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const data = await res.json();
+      const result = parseTasiFromV8Chart(data);
+      if (result) { saveLastKnownTasi(result); return result; }
     }
   } catch { /* fall through */ }
 
