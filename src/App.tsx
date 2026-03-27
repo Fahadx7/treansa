@@ -2835,21 +2835,21 @@ function App() {
           const gainers   = tickers.filter(s => s.change > 0).length;
           const losers    = tickers.filter(s => s.change < 0).length;
           const unchanged = tickers.length - gainers - losers;
-          // Fallback: volume-weighted average price of all loaded stocks
-          const stocksPrice = !tasiData && tickers.length > 0
-            ? (() => {
-                const totalVol = tickers.reduce((s, t) => s + (t.volume || 1), 0) || 1;
-                return tickers.reduce((s, t) => s + t.price * (t.volume || 1), 0) / totalVol;
-              })()
-            : 0;
-          const price     = tasiData?.price ?? stocksPrice;
+          const price     = tasiData?.price ?? 0;
           const chg       = tasiData?.change ?? 0;
-          const chgPct    = tasiData?.changePercent ?? (!tasiData && tickers.length > 0
-            ? tickers.reduce((s, t) => s + t.change, 0) / tickers.length
-            : 0);
+          const chgPct    = tasiData?.changePercent ?? 0;
           const isUp      = chgPct >= 0;
           const hasPrice  = price > 0;
           const hasMkt    = tickers.length > 0;
+
+          // Saudi market hours: Sun–Thu 10:00–15:00 AST (UTC+3)
+          const nowSaudi  = new Date(Date.now() + 3 * 3600_000);
+          const saudiDay  = nowSaudi.getUTCDay();   // 0=Sun … 6=Sat
+          const saudiHour = nowSaudi.getUTCHours();
+          const saudiMin  = nowSaudi.getUTCMinutes();
+          const isWeekday = saudiDay >= 0 && saudiDay <= 4; // Sun=0, Thu=4
+          const isInHours = (saudiHour > 10 || (saudiHour === 10 && saudiMin >= 0)) && saudiHour < 15;
+          const isMarketOpen = isWeekday && isInHours;
           const updatedStr = tasiLastUpdated
             ? tasiLastUpdated.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
             : null;
@@ -2904,6 +2904,16 @@ function App() {
                     المؤشر العام - تاسي
                   </span>
                   <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.06em' }}>TASI</span>
+                  <span
+                    style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                      background: isMarketOpen ? 'rgba(0,200,150,0.15)' : 'rgba(255,255,255,0.07)',
+                      border: `1px solid ${isMarketOpen ? 'rgba(0,200,150,0.35)' : 'rgba(255,255,255,0.12)'}`,
+                      color: isMarketOpen ? '#00c896' : 'rgba(255,255,255,0.4)',
+                    }}
+                  >
+                    {isMarketOpen ? '● مفتوح' : '● مغلق'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   {updatedStr && (
