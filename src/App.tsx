@@ -2878,8 +2878,14 @@ function App() {
           const chg       = tasiData?.change ?? 0;
           const chgPct    = tasiData?.changePercent ?? 0;
           const isUp      = chgPct >= 0;
-          const hasPrice  = price > 0;
           const hasMkt    = tickers.length > 0;
+          // Fallback: average stock price when ^TASI fetch fails
+          const fallbackPrice = hasMkt && !price
+            ? tickers.reduce((sum, s) => sum + (s.price ?? 0), 0) / tickers.length
+            : 0;
+          const displayPrice  = price > 0 ? price : fallbackPrice;
+          const isFallback    = price === 0 && fallbackPrice > 0;
+          const hasPrice      = displayPrice > 0;
 
           // Saudi market hours: Sun–Thu 10:00–15:00 AST (UTC+3)
           const nowSaudi  = new Date(Date.now() + 3 * 3600_000);
@@ -2975,14 +2981,12 @@ function App() {
                   {/* Big price number */}
                   <div className="mb-1">
                     {hasPrice ? (
-                      <div
-                        className="num leading-none text-white"
-                        style={{ fontSize: 42, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em' }}
-                      >
-                        {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div style={{ fontSize: 36, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
+                        {displayPrice.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {isFallback && (
+                          <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.35)', marginRight: 6, fontFamily: 'inherit' }}>~متوسط</span>
+                        )}
                       </div>
-                    ) : hasMkt ? (
-                      <div className="num leading-none" style={{ fontSize: 42, fontWeight: 800, color: 'rgba(255,255,255,0.2)' }}>—</div>
                     ) : (
                       <div className="animate-pulse h-12 w-48 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)' }} />
                     )}
