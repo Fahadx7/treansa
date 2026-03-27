@@ -6,6 +6,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions."morning-report"]
+  schedule = "30 6 * * 0-4"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"

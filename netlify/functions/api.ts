@@ -817,8 +817,58 @@ app.post("/api/ai-news", async (req, res) => {
 });
 
 app.post("/api/ai-logo", (_req, res) => {
-    // Logo generation endpoint — currently unavailable
     res.status(503).json({ success: false, error: "توليد الشعارات غير متاح حالياً." });
+});
+
+// ── Design Agent chat endpoint ──────────────────────────────────────────────
+app.post("/api/design-agent", async (req, res) => {
+    const ip = req.ip || 'unknown';
+    if (!checkRateLimit(ip + ':design', 20, 60_000)) {
+        return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح، انتظر دقيقة." });
+    }
+    const { messages } = req.body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ success: false, error: "messages مطلوب" });
+    }
+    if (!process.env.ANTHROPIC_API_KEY) {
+        return res.status(503).json({ success: false, error: "مفتاح Claude غير مضبوط." });
+    }
+
+    const system = `أنت مصمم UI/UX خبير متخصص في منصات التداول المالية.
+منصة ترندسا هي منصة تحليل السوق السعودي (تاسي) — واجهة داكنة، RTL عربي، ألوان: #060b14 خلفية، #00d4aa أخضر رئيسي، #ff3d5a أحمر، #4a9eff أزرق.
+المكونات المستخدمة: React + Tailwind CSS + Framer Motion + Recharts + Lucide Icons.
+
+قدّم توصيات تصميم دقيقة وقابلة للتطبيق مباشرة:
+- كود Tailwind / CSS فعلي لا وصف عام
+- أرقام دقيقة: font-size، spacing، colors بصيغة hex
+- اقتراحات تراعي RTL واللغة العربية
+- ردود مختصرة ومركّزة، بدون مقدمات زائدة`;
+
+    try {
+        const claudeRes = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': process.env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 1200,
+                system,
+                messages,
+            }),
+            timeoutMs: 20000,
+        });
+        if (!claudeRes.ok) {
+            const err = await claudeRes.text();
+            throw new Error(`Claude ${claudeRes.status}: ${err.slice(0, 150)}`);
+        }
+        const data: any = await claudeRes.json();
+        res.json({ success: true, reply: data.content?.[0]?.text ?? '' });
+    } catch (e: any) {
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 export const handler = serverless(app);
