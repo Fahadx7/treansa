@@ -84,9 +84,49 @@ function SettingsRow({ label, subLabel, checked, onChange }: {
   );
 }
 
+// ─── Stock detection & data injection ────────────────────────────────────────
+
+interface StockLike {
+  symbol: string;
+  companyName: string;
+  price: number;
+  change: number;
+  volume: number;
+  rsi?: number;
+  wave?: string;
+  macd?: { macd: number; signal: number; histogram: number };
+}
+
+function findMentionedStock(text: string, stocks: StockLike[]): StockLike | null {
+  const normalized = text.replace(/\s/g, '');
+  for (const s of stocks) {
+    // Match 4-digit symbol (e.g. 1010, 2222)
+    const sym = s.symbol.replace('.SR', '');
+    if (normalized.includes(sym)) return s;
+    // Match company name (partial, at least 3 chars)
+    const name = s.companyName.replace(/\s/g, '');
+    if (name.length >= 3 && text.includes(s.companyName.slice(0, 3))) return s;
+  }
+  return null;
+}
+
+function buildStockContext(s: StockLike): string {
+  const lines = [
+    `بيانات سهم ${s.companyName} (${s.symbol.replace('.SR', '')}) الحالية:`,
+    `- السعر: ${s.price.toFixed(2)} ريال`,
+    `- التغيير: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%`,
+    `- حجم التداول: ${s.volume.toLocaleString('ar-SA')}`,
+  ];
+  if (s.rsi && s.rsi !== 50) lines.push(`- RSI: ${s.rsi.toFixed(1)}`);
+  if (s.macd) lines.push(`- MACD هيستوجرام: ${s.macd.histogram >= 0 ? '+' : ''}${s.macd.histogram.toFixed(4)}`);
+  if (s.wave && s.wave !== 'غير محدد') lines.push(`- موجة إليوت: ${s.wave}`);
+  lines.push('', 'بناءً على هذه البيانات، قدم تحليلاً كاملاً.');
+  return lines.join('\n');
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function AIAdvisor() {
+export default function AIAdvisor({ stocks = [] }: { stocks?: StockLike[] }) {
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -114,16 +154,28 @@ export default function AIAdvisor() {
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
+
+    // Inject real stock data if a known stock is mentioned
+    const match = stocks.length > 0 ? findMentionedStock(trimmed, stocks) : null;
+    const enriched = match ? `${buildStockContext(match)}\n\nسؤال المستخدم: ${trimmed}` : trimmed;
+
     const next: Message[] = [...messages, { role: 'user', content: trimmed }];
     setMessages(next);
     setInput('');
     setLoading(true);
     setChatError(null);
+
+    // Send enriched message to AI (user sees original, AI gets data-enriched version)
+    const apiMessages = [
+      ...messages,
+      { role: 'user', content: enriched },
+    ];
+
     try {
       const res = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: apiMessages }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);

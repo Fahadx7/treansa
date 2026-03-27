@@ -2857,7 +2857,7 @@ function App() {
       </nav>
 
       {/* ── AI Advisor Page ──────────────────────────────────────────────── */}
-      {currentPage === 'ai-advisor' && <AIAdvisor />}
+      {currentPage === 'ai-advisor' && <AIAdvisor stocks={status?.tickerData ?? []} />}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8" style={{ display: currentPage === 'home' ? undefined : 'none' }}>
         {/* Inline error banner */}
