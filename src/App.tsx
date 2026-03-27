@@ -3432,6 +3432,13 @@ function App() {
         </div>
       </main>
 
+      {/* ── Disclaimer ─────────────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 pb-6 pt-2">
+        <p className="text-center text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          💡 تنبيه: المحتوى في ترندسا للاستشارة والتثقيف المالي فقط، ولا يُمثّل توصية استثمارية. استشر مستشارك المالي قبل اتخاذ أي قرار.
+        </p>
+      </div>
+
       <style dangerouslySetInnerHTML={{ __html: `
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
