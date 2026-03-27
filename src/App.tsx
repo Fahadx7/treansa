@@ -36,8 +36,10 @@ import {
   Moon,
   Newspaper,
   Search,
-  List as ListIcon
+  List as ListIcon,
+  Brain
 } from 'lucide-react';
+import AIAdvisor from './pages/AIAdvisor';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1980,6 +1982,7 @@ function App() {
   const sentRadarAlertsRef = useRef(new Set<string>());
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
+  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor'>('home');
   const [themeSpin, setThemeSpin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
@@ -2820,7 +2823,43 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+      {/* ── Page Navigation Bar ─────────────────────────────────────────── */}
+      <nav
+        className="sticky top-[68px] z-[70]"
+        style={{ background: 'rgba(6,11,20,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(99,179,237,0.1)' }}
+      >
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex items-center gap-1" style={{ height: 44 }}>
+            <button
+              onClick={() => setCurrentPage('home')}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-all relative"
+              style={{ color: currentPage === 'home' ? '#00d4aa' : 'rgba(255,255,255,0.45)' }}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>لوحة التداول</span>
+              {currentPage === 'home' && (
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#00d4aa' }} />
+              )}
+            </button>
+            <button
+              onClick={() => setCurrentPage('ai-advisor')}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-all relative"
+              style={{ color: currentPage === 'ai-advisor' ? '#00d4aa' : 'rgba(255,255,255,0.45)' }}
+            >
+              <Brain className="w-4 h-4" />
+              <span>المستشار الذكي</span>
+              {currentPage === 'ai-advisor' && (
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#00d4aa' }} />
+              )}
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* ── AI Advisor Page ──────────────────────────────────────────────── */}
+      {currentPage === 'ai-advisor' && <AIAdvisor />}
+
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8" style={{ display: currentPage === 'home' ? undefined : 'none' }}>
         {/* Inline error banner */}
         {fetchError && (
           <div className="flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-sm text-rose-400">
