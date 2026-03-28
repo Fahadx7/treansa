@@ -625,6 +625,32 @@ app.get("/api/tasi", async (req, res) => {
         }
     } catch { /* fall through */ }
 
+    // Attempt 4: allorigins CORS proxy (bypasses Yahoo Finance IP restrictions)
+    try {
+        const period1 = Math.floor((Date.now() - 7 * 24 * 3600 * 1000) / 1000);
+        const period2 = Math.floor(Date.now() / 1000);
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/%5ETASI?interval=1d&period1=${period1}&period2=${period2}`;
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`;
+        const r4 = await fetchWithTimeout(proxyUrl, { timeoutMs: 10000 });
+        if (r4.ok) {
+            const data: any = await r4.json();
+            const meta = data?.chart?.result?.[0]?.meta;
+            const price = meta ? (meta.regularMarketPrice || meta.chartPreviousClose || 0) : 0;
+            if (price > 1000) {
+                const prev = meta.chartPreviousClose || meta.previousClose || price;
+                return res.json({
+                    success: true, price,
+                    change:        meta.regularMarketChange        || (price - prev),
+                    changePercent: meta.regularMarketChangePercent || ((price - prev) / prev * 100),
+                    high:          meta.regularMarketDayHigh       || price,
+                    low:           meta.regularMarketDayLow        || price,
+                    volume:        meta.regularMarketVolume        || 0,
+                    time:          new Date().toISOString(),
+                });
+            }
+        }
+    } catch { /* fall through */ }
+
     return res.status(503).json({ success: false, error: 'بيانات تاسي غير متوفرة حالياً' });
 });
 

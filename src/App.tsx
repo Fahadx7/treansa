@@ -2499,23 +2499,11 @@ function App() {
       if (marketIndex) {
         setTasiData(marketIndex);
         setTasiLastUpdated(new Date());
-      } else if (allStocks.length > 0) {
-        // ── Fallback: estimate TASI from stock average + last known base value ──
-        const base = loadLastKnownTasi();
-        if (base && base.price > 0) {
-          const avgChangePct = allStocks.reduce((s, st) => s + st.change, 0) / allStocks.length;
-          const estimatedPrice = base.price * (1 + avgChangePct / 100);
-          marketIndex = {
-            price:         estimatedPrice,
-            change:        estimatedPrice - base.price,
-            changePercent: avgChangePct,
-            high:          estimatedPrice,
-            low:           estimatedPrice,
-            volume:        0,
-            time:          new Date().toISOString(),
-          };
-          setTasiData(marketIndex);
-          setTasiLastUpdated(new Date());
+      } else {
+        // Fallback: use cached TASI (ignore TTL — real index value is better than nothing)
+        const cached = loadLastKnownTasi(true);
+        if (cached && cached.price > 1000) {
+          setTasiData(cached);
         }
       }
 
@@ -3144,11 +3132,24 @@ function App() {
             const gainers  = tickers.filter(s => s.change > 0).length;
             const losers   = tickers.filter(s => s.change < 0).length;
             const unchanged = tickers.length - gainers - losers;
-            // Use indexQuotes (dedicated /api/tasi fetch) first, then tasiData from runMarketScan
-            const tasiQ    = indexQuotes['^TASI'];
-            const price    = (tasiQ?.price ?? 0) > 0 ? tasiQ!.price : (tasiData?.price ?? 0);
-            const chg      = tasiQ?.change ?? tasiData?.change ?? 0;
-            const chgPct   = tasiQ?.changePercent ?? tasiData?.changePercent ?? 0;
+            // Priority: indexQuotes → tasiData → localStorage cache (no TTL — show stale over "—")
+            const tasiQ = indexQuotes['^TASI'];
+            let price   = (tasiQ?.price ?? 0) > 0 ? tasiQ!.price : (tasiData?.price ?? 0);
+            let chg     = tasiQ?.change ?? tasiData?.change ?? 0;
+            let chgPct  = tasiQ?.changePercent ?? tasiData?.changePercent ?? 0;
+            if (price <= 0) {
+              try {
+                const raw = localStorage.getItem('tasi_last_known');
+                if (raw) {
+                  const cached = JSON.parse(raw);
+                  if (cached?.price > 1000) {
+                    price  = cached.price;
+                    chg    = cached.change ?? 0;
+                    chgPct = cached.changePercent ?? 0;
+                  }
+                }
+              } catch { /* ignore */ }
+            }
             const isUp     = chgPct >= 0;
             const hasPrice = price > 0;
             return (

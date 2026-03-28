@@ -69,12 +69,12 @@ export function saveLastKnownTasi(d: TASIData): void {
   try { localStorage.setItem(TASI_CACHE_KEY, JSON.stringify({ ...d, savedAt: Date.now() })); } catch { /* storage full */ }
 }
 
-export function loadLastKnownTasi(): TASIData | null {
+export function loadLastKnownTasi(ignoreTTL = false): TASIData | null {
   try {
     const raw = localStorage.getItem(TASI_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (Date.now() - (parsed.savedAt ?? 0) > TASI_CACHE_TTL) return null;
+    if (!ignoreTTL && Date.now() - (parsed.savedAt ?? 0) > TASI_CACHE_TTL) return null;
     return parsed as TASIData;
   } catch { return null; }
 }
