@@ -2641,16 +2641,19 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
-  // Index quotes for ticker bar (MT30, NOMU) — refresh every 5 min
+  // Index quotes for ticker bar — refresh every 5 min
+  // Fetches ^TASI directly so ticker works independently of tasiData state
   useEffect(() => {
+    const SYMBOLS = ['^TASI', '^MT30', '^NOMU'];
     const load = async () => {
       try {
-        const res = await fetch('/api/quotes?symbols=%5ETASM30,%5ETASASI');
+        const encoded = SYMBOLS.map(s => encodeURIComponent(s)).join(',');
+        const res = await fetch(`/api/quotes?symbols=${encoded}`);
         if (!res.ok) return;
         const data = await res.json();
         const map: Record<string, { price: number; change: number; changePercent: number }> = {};
         for (const q of (data.result ?? [])) {
-          if (typeof q.regularMarketPrice === 'number') {
+          if (typeof q.regularMarketPrice === 'number' && q.regularMarketPrice > 0) {
             map[q.symbol] = {
               price: q.regularMarketPrice,
               change: q.regularMarketChange ?? 0,
@@ -2658,7 +2661,7 @@ function App() {
             };
           }
         }
-        if (Object.keys(map).length > 0) setIndexQuotes(map);
+        if (Object.keys(map).length > 0) setIndexQuotes(prev => ({ ...prev, ...map }));
       } catch { /* silent fail */ }
     };
     load();
@@ -2880,24 +2883,27 @@ function App() {
 
       {/* ── Index Ticker Bar ────────────────────────────────────────────── */}
       {(() => {
+        const tasiQ = indexQuotes['^TASI'];
+        const mt30Q = indexQuotes['^MT30'];
+        const nomuQ = indexQuotes['^NOMU'];
         const indices: TickerIndex[] = [
           {
             label: 'تاسي',
-            price: tasiData?.price ?? null,
-            change: tasiData?.change ?? null,
-            changePercent: tasiData?.changePercent ?? null,
+            price: (tasiQ?.price ?? 0) > 0 ? tasiQ!.price : (tasiData?.price ?? 0) > 0 ? tasiData!.price : null,
+            change: tasiQ?.change ?? tasiData?.change ?? null,
+            changePercent: tasiQ?.changePercent ?? tasiData?.changePercent ?? null,
           },
           {
             label: 'إم تي 30',
-            price: indexQuotes['^TASM30']?.price ?? null,
-            change: indexQuotes['^TASM30']?.change ?? null,
-            changePercent: indexQuotes['^TASM30']?.changePercent ?? null,
+            price: (mt30Q?.price ?? 0) > 0 ? mt30Q!.price : null,
+            change: mt30Q?.change ?? null,
+            changePercent: mt30Q?.changePercent ?? null,
           },
           {
             label: 'نمو',
-            price: indexQuotes['^TASASI']?.price ?? null,
-            change: indexQuotes['^TASASI']?.change ?? null,
-            changePercent: indexQuotes['^TASASI']?.changePercent ?? null,
+            price: (nomuQ?.price ?? 0) > 0 ? nomuQ!.price : null,
+            change: nomuQ?.change ?? null,
+            changePercent: nomuQ?.changePercent ?? null,
           },
           {
             label: 'الصكوك',
