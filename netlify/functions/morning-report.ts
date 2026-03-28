@@ -236,7 +236,7 @@ ${tasiLine}
 أخبار اقتصادية حديثة:
 ${newsText || 'لا توجد أخبار'}
 
-اكتب توقعك لجلسة اليوم في جملتين أو ثلاث جمل عربية واضحة ومختصرة جداً. ركّز على: الاتجاه العام المتوقع، وأبرز القطاعات أو الأسهم التي تستحق المتابعة. لا تستخدم تنسيق markdown. لا تذكر تحفظات قانونية.`;
+اكتب توقعاً لجلسة اليوم في جملة أو جملتين فقط، بحد أقصى 150 حرفاً عربياً. اكتب جملاً كاملة فقط ولا تقطع في منتصف الجملة. لا markdown ولا تحفظات قانونية.`;
 
   try {
     const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
@@ -248,7 +248,7 @@ ${newsText || 'لا توجد أخبار'}
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
+        max_tokens: 120,
         messages: [{ role: 'user', content: prompt }],
       }),
       timeoutMs: 20000,
@@ -256,7 +256,13 @@ ${newsText || 'لا توجد أخبار'}
 
     if (!res.ok) return 'تعذّر توليد التحليل.';
     const data: any = await res.json();
-    return (data?.content?.[0]?.text ?? '').trim() || 'تعذّر توليد التحليل.';
+    const raw = (data?.content?.[0]?.text ?? '').trim();
+    if (!raw) return 'تعذّر توليد التحليل.';
+    // Hard cap at 200 chars, cutting only at a sentence boundary
+    if (raw.length <= 200) return raw;
+    const cut = raw.slice(0, 200);
+    const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('\u060C'), cut.lastIndexOf('!'), cut.lastIndexOf('\u061F'));
+    return lastDot > 80 ? cut.slice(0, lastDot + 1) : cut;
   } catch {
     return 'تعذّر توليد التحليل.';
   }
