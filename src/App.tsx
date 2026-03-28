@@ -2642,26 +2642,23 @@ function App() {
   }, []);
 
   // Index quotes for ticker bar — refresh every 5 min
-  // Fetches ^TASI directly so ticker works independently of tasiData state
+  // Fetches TASI via dedicated /api/tasi endpoint (most reliable)
   useEffect(() => {
-    const SYMBOLS = ['^TASI', '^MT30', '^NOMU'];
     const load = async () => {
       try {
-        const encoded = SYMBOLS.map(s => encodeURIComponent(s)).join(',');
-        const res = await fetch(`/api/quotes?symbols=${encoded}`);
+        const res = await fetch('/api/tasi');
         if (!res.ok) return;
         const data = await res.json();
-        const map: Record<string, { price: number; change: number; changePercent: number }> = {};
-        for (const q of (data.result ?? [])) {
-          if (typeof q.regularMarketPrice === 'number' && q.regularMarketPrice > 0) {
-            map[q.symbol] = {
-              price: q.regularMarketPrice,
-              change: q.regularMarketChange ?? 0,
-              changePercent: q.regularMarketChangePercent ?? 0,
-            };
-          }
+        if (data.success && typeof data.price === 'number' && data.price > 0) {
+          setIndexQuotes(prev => ({
+            ...prev,
+            '^TASI': {
+              price: data.price,
+              change: data.change ?? 0,
+              changePercent: data.changePercent ?? 0,
+            },
+          }));
         }
-        if (Object.keys(map).length > 0) setIndexQuotes(prev => ({ ...prev, ...map }));
       } catch { /* silent fail */ }
     };
     load();
@@ -2884,33 +2881,15 @@ function App() {
       {/* ── Index Ticker Bar ────────────────────────────────────────────── */}
       {(() => {
         const tasiQ = indexQuotes['^TASI'];
-        const mt30Q = indexQuotes['^MT30'];
-        const nomuQ = indexQuotes['^NOMU'];
+        // Use indexQuotes first (dedicated /api/tasi fetch), fall back to tasiData from runMarketScan
+        const tasiPrice = (tasiQ?.price ?? 0) > 0 ? tasiQ!.price : (tasiData?.price ?? 0) > 0 ? tasiData!.price : null;
+        const tasiChange = tasiQ?.change ?? tasiData?.change ?? null;
+        const tasiChgPct = tasiQ?.changePercent ?? tasiData?.changePercent ?? null;
         const indices: TickerIndex[] = [
-          {
-            label: 'تاسي',
-            price: (tasiQ?.price ?? 0) > 0 ? tasiQ!.price : (tasiData?.price ?? 0) > 0 ? tasiData!.price : null,
-            change: tasiQ?.change ?? tasiData?.change ?? null,
-            changePercent: tasiQ?.changePercent ?? tasiData?.changePercent ?? null,
-          },
-          {
-            label: 'إم تي 30',
-            price: (mt30Q?.price ?? 0) > 0 ? mt30Q!.price : null,
-            change: mt30Q?.change ?? null,
-            changePercent: mt30Q?.changePercent ?? null,
-          },
-          {
-            label: 'نمو',
-            price: (nomuQ?.price ?? 0) > 0 ? nomuQ!.price : null,
-            change: nomuQ?.change ?? null,
-            changePercent: nomuQ?.changePercent ?? null,
-          },
-          {
-            label: 'الصكوك',
-            price: 920.19,
-            change: null,
-            changePercent: null,
-          },
+          { label: 'تاسي',   price: tasiPrice, change: tasiChange, changePercent: tasiChgPct },
+          { label: 'إم تي 30', price: null, change: null, changePercent: null },
+          { label: 'نمو',    price: null, change: null, changePercent: null },
+          { label: 'الصكوك', price: 920.19, change: null, changePercent: null },
         ];
         return <IndexTickerBar indices={indices} />;
       })()}
