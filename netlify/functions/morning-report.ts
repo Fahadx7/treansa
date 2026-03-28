@@ -77,6 +77,40 @@ interface TasiData {
   changePercent: number;
 }
 
+interface CommodityData {
+  symbol: string;
+  price: number;
+  changePercent: number;
+}
+
+/** Fetch commodity prices (Brent Oil, Gold). Returns empty array on failure. */
+async function fetchCommodities(
+  crumb: string,
+  cookies: string,
+): Promise<CommodityData[]> {
+  const symbols = ['BZ=F', 'GC=F'];
+  const crumbQ = crumb ? `&crumb=${encodeURIComponent(crumb)}` : '';
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}${crumbQ}`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { ...YF_HEADERS, Cookie: cookies },
+      timeoutMs: 8000,
+    });
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    const results: any[] = data?.quoteResponse?.result ?? [];
+    return results
+      .filter((q) => typeof q.regularMarketPrice === 'number')
+      .map((q) => ({
+        symbol: q.symbol as string,
+        price: q.regularMarketPrice as number,
+        changePercent: (q.regularMarketChangePercent as number) ?? 0,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /** Fetch a batch of YF quotes. Returns an empty array on failure. */
 async function fetchQuotes(
   symbols: string[],
@@ -352,11 +386,12 @@ export default async function handler(): Promise<Response> {
   // 2. Fetch TASI index
   const tasiData = await fetchTASI(crumb, cookies);
 
-  // 3. Fetch stock quotes in two batches to stay under URL limits
+  // 3. Fetch stock quotes + commodities in parallel
   const half = Math.ceil(TOP_SAUDI_SYMBOLS.length / 2);
-  const [batch1, batch2] = await Promise.all([
+  const [batch1, batch2, commodities] = await Promise.all([
     fetchQuotes(TOP_SAUDI_SYMBOLS.slice(0, half), crumb, cookies),
     fetchQuotes(TOP_SAUDI_SYMBOLS.slice(half), crumb, cookies),
+    fetchCommodities(crumb, cookies),
   ]);
   const allQuotes = [...batch1, ...batch2].filter(
     (q) => typeof q.regularMarketChangePercent === 'number',
@@ -407,6 +442,23 @@ export default async function handler(): Promise<Response> {
     .map((n) => `• ${n.title}`)
     .join('\n');
 
+  const brent = commodities.find((c) => c.symbol === 'BZ=F');
+  const gold = commodities.find((c) => c.symbol === 'GC=F');
+  const commoditiesBlock =
+    brent || gold
+      ? [
+          `🛢️ *النفط والمعادن:*`,
+          brent
+            ? `• برنت: $${brent.price.toFixed(2)} (${brent.changePercent >= 0 ? '+' : ''}${brent.changePercent.toFixed(2)}%)`
+            : null,
+          gold
+            ? `• ذهب: $${gold.price.toFixed(0)} (${gold.changePercent >= 0 ? '+' : ''}${gold.changePercent.toFixed(2)}%)`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : null;
+
   const message = [
     `🌅 *تقرير ترندسا الصباحي*`,
     `📅 ${dateLabel}`,
@@ -415,6 +467,7 @@ export default async function handler(): Promise<Response> {
     `📊 *السوق أمس:*`,
     `• المؤشر: ${tasiLine}`,
     `• صاعد: ${gainersCount} | هابط: ${losersCount}`,
+    commoditiesBlock ? `\n${commoditiesBlock}` : null,
     ``,
     gainers.length > 0
       ? `🔥 *أبرز الصاعدين:*\n${gainersBlock}`

@@ -36,8 +36,7 @@ import {
   Moon,
   Newspaper,
   Search,
-  List as ListIcon,
-  Brain
+  List as ListIcon
 } from 'lucide-react';
 import AIAdvisor from './pages/AIAdvisor';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
@@ -1955,6 +1954,51 @@ const AlertsModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
+// ─── Commodities Bar ─────────────────────────────────────────────────────────
+
+interface CommodityItem {
+  label: string;
+  icon: string;
+  price: number;
+  changePercent: number;
+  prefix: string;
+}
+
+function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: boolean }) {
+  if (loading && items.length === 0) {
+    return (
+      <div className="h-8 flex items-center px-4" style={{ background: 'rgba(6,11,20,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="animate-pulse h-3 w-48 rounded" style={{ background: 'rgba(255,255,255,0.06)' }} />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="overflow-x-auto"
+      style={{ background: 'rgba(6,11,20,0.92)', borderBottom: '1px solid rgba(255,255,255,0.06)', height: 32 }}
+    >
+      <div className="flex items-center gap-5 px-4 h-full whitespace-nowrap" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+        {items.map((item) => {
+          const up = item.changePercent >= 0;
+          const color = up ? '#00c896' : '#ff3d5a';
+          return (
+            <span key={item.label} className="flex items-center gap-1.5 text-[11px]">
+              <span>{item.icon}</span>
+              <span style={{ color: 'rgba(255,255,255,0.55)' }}>{item.label}:</span>
+              <span className="font-bold" style={{ color: 'white' }}>
+                {item.prefix}{item.price.toLocaleString('en-US', { minimumFractionDigits: item.prefix === '' ? 4 : 2, maximumFractionDigits: item.prefix === '' ? 4 : 2 })}
+              </span>
+              <span className="font-semibold" style={{ color, fontSize: 10 }}>
+                {up ? '▲' : '▼'}{Math.abs(item.changePercent).toFixed(2)}%
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -1983,6 +2027,8 @@ function App() {
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor'>('home');
+  const [commodities, setCommodities] = useState<CommodityItem[]>([]);
+  const [commoditiesLoading, setCommoditiesLoading] = useState(true);
   const [themeSpin, setThemeSpin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
@@ -2476,6 +2522,36 @@ function App() {
     }
   }, [tasiData]);
 
+  // Commodities bar — refresh every 10 minutes
+  useEffect(() => {
+    const COMMODITY_MAP: Record<string, { label: string; icon: string; prefix: string }> = {
+      'BZ=F':     { label: 'برنت',       icon: '🛢️', prefix: '$' },
+      'GC=F':     { label: 'ذهب',        icon: '🥇', prefix: '$' },
+      'USDSAR=X': { label: 'دولار/ريال', icon: '💵', prefix: '' },
+    };
+    const load = async () => {
+      try {
+        const res = await fetch('/api/quotes?symbols=BZ%3DF%2CGC%3DF%2CUSDSAR%3DX');
+        if (!res.ok) return;
+        const data = await res.json();
+        const quotes: any[] = data.result ?? [];
+        const items: CommodityItem[] = quotes
+          .filter((q: any) => COMMODITY_MAP[q.symbol] && typeof q.regularMarketPrice === 'number')
+          .map((q: any) => ({
+            ...COMMODITY_MAP[q.symbol],
+            price: q.regularMarketPrice as number,
+            changePercent: (q.regularMarketChangePercent as number) ?? 0,
+          }));
+        if (items.length > 0) setCommodities(items);
+      } catch { /* silent fail */ } finally {
+        setCommoditiesLoading(false);
+      }
+    };
+    load();
+    const t = setInterval(load, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const TradeRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const trade = status?.activeTrades[index];
     if (!trade) return null;
@@ -2855,6 +2931,9 @@ function App() {
           </div>
         </div>
       </nav>
+
+      {/* ── Commodities Bar ─────────────────────────────────────────────── */}
+      <CommoditiesBar items={commodities} loading={commoditiesLoading} />
 
       {/* ── AI Advisor Page ──────────────────────────────────────────────── */}
       {currentPage === 'ai-advisor' && <AIAdvisor stocks={status?.tickerData ?? []} />}
