@@ -3124,7 +3124,7 @@ function App() {
       <CommoditiesBar items={commodities} loading={commoditiesLoading} />
 
       {/* ── AI Advisor Page ──────────────────────────────────────────────── */}
-      {currentPage === 'ai-advisor' && <AIAdvisor stocks={status?.tickerData ?? []} />}
+      {currentPage === 'ai-advisor' && <AIAdvisor stocks={status?.tickerData ?? []} tasiData={tasiData} />}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8" style={{ display: currentPage === 'home' ? undefined : 'none' }}>
         {/* Inline error banner */}
