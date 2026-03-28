@@ -234,6 +234,58 @@ function riyadhDate() {
   return `${ARABIC_DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${ARABIC_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
+function buildSimpleEmailHtml(opts: {
+  dateLabel: string;
+  tasiLine: string;
+  gainersCount: number;
+  losersCount: number;
+  gainersBlock: string;
+  newsBlock: string;
+  forecast: string;
+  commoditiesBlock: string | null;
+}): string {
+  const { dateLabel, tasiLine, gainersCount, losersCount, gainersBlock, newsBlock, forecast, commoditiesBlock } = opts;
+  const sec = 'background:#161b22;border-right:3px solid #00d4aa;border-radius:8px;padding:16px 20px;margin-bottom:16px;';
+  const lbl = 'color:#00d4aa;font-weight:bold;font-size:14px;margin-bottom:10px;display:block;';
+  const row = 'color:#e6edf3;font-size:14px;line-height:1.8;direction:rtl;text-align:right;';
+  const commHtml = commoditiesBlock
+    ? `<div style="${sec}"><span style="${lbl}">🛢️ السلع العالمية</span><div style="${row}">${commoditiesBlock.replace(/^🛢️ \*السلع العالمية:\*\n/, '').split('\n').map(l => `${l}<br/>`).join('')}</div></div>`
+    : '';
+  return `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#0d1117;font-family:'Segoe UI',Arial,sans-serif;">
+<div style="max-width:600px;margin:0 auto;padding:24px 16px;">
+  <div style="text-align:center;padding:24px 0 16px;">
+    <div style="font-size:28px;font-weight:900;color:#00d4aa;">ترندسا</div>
+    <div style="font-size:13px;color:#8b949e;margin-top:4px;">منصة تحليل السوق السعودي</div>
+  </div>
+  <div style="background:linear-gradient(135deg,#00d4aa22,#00d4aa08);border:1px solid #00d4aa33;border-radius:12px;padding:16px;text-align:center;margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:bold;color:#e6edf3;">🌅 تقرير ترندسا الصباحي</div>
+    <div style="font-size:13px;color:#8b949e;margin-top:6px;">📅 ${dateLabel} | ⏰ قبل 30 دقيقة من افتتاح السوق</div>
+  </div>
+  <div style="${sec}">
+    <span style="${lbl}">📊 السوق أمس</span>
+    <div style="${row}">المؤشر: ${tasiLine}<br/>📈 صاعد: <span style="color:#00d4aa">${gainersCount}</span> | 📉 هابط: <span style="color:#ff3d5a">${losersCount}</span></div>
+  </div>
+  ${commHtml}
+  <div style="${sec}">
+    <span style="${lbl}">🔥 أبرز الصاعدين</span>
+    <div style="${row}">${gainersBlock.split('\n').map(l => `<span style="color:#00d4aa">${l}</span><br/>`).join('')}</div>
+  </div>
+  <div style="${sec}border-right-color:#58a6ff;">
+    <span style="color:#58a6ff;font-weight:bold;font-size:14px;margin-bottom:10px;display:block;">📰 أخبار مؤثرة</span>
+    <div style="${row}">${newsBlock.split('\n').map(l => `${l}<br/>`).join('')}</div>
+  </div>
+  <div style="background:linear-gradient(135deg,#1a2332,#161b22);border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin-bottom:16px;">
+    <span style="${lbl}">🎯 توقع اليوم</span>
+    <div style="color:#e6edf3;font-size:15px;line-height:1.7;direction:rtl;text-align:right;">${forecast}</div>
+  </div>
+  <div style="text-align:center;padding:16px 0;border-top:1px solid #21262d;">
+    <div style="color:#8b949e;font-size:12px;">💡 للاستشارة والتثقيف المالي فقط</div>
+    <div style="margin-top:4px;"><a href="https://trandsa2030.netlify.app" style="color:#00d4aa;text-decoration:none;font-size:12px;">trandsa2030.netlify.app</a></div>
+  </div>
+</div></body></html>`;
+}
+
 export const handler: Handler = async (event) => {
   const shouldSend = event.queryStringParameters?.send === "1";
   const steps: string[] = [];
@@ -325,9 +377,12 @@ export const handler: Handler = async (event) => {
     `🔗 trandsa2030.netlify.app`,
   ].filter((l) => l !== null).join("\n");
 
-  // 7. Optionally send
-  let sendResult = "لم يُرسَل (أضف ?send=1 للإرسال)";
+  // 8. Optionally send Telegram + Email
+  let telegramResult = "لم يُرسَل (أضف ?send=1 للإرسال)";
+  let emailResult = "لم يُرسَل (أضف ?send=1 للإرسال)";
+
   if (shouldSend) {
+    // Telegram
     const token = (process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN || "")
       .replace(/\s/g, "").replace(/^TOKEN=/i, "").replace(/^"|"$/g, "").trim();
     const chatId = (process.env.TELEGRAM_CHAT_ID || "")
@@ -341,18 +396,43 @@ export const handler: Handler = async (event) => {
           timeoutMs: 10000,
         });
         const d: any = await r.json().catch(() => ({}));
-        sendResult = r.ok ? "✅ أُرسل بنجاح عبر Telegram" : `❌ فشل: ${d.description ?? r.status}`;
+        telegramResult = r.ok ? "✅ أُرسل بنجاح عبر Telegram" : `❌ فشل: ${d.description ?? r.status}`;
       } catch (e: any) {
-        sendResult = `❌ خطأ: ${e.message}`;
+        telegramResult = `❌ خطأ: ${(e as Error).message}`;
       }
     } else {
-      sendResult = "❌ بيانات Telegram غير مضبوطة في env";
+      telegramResult = "❌ بيانات Telegram غير مضبوطة في env";
+    }
+
+    // Email via Resend
+    const resendKey = process.env.RESEND_API_KEY;
+    if (resendKey) {
+      try {
+        const emailHtml = buildSimpleEmailHtml({ dateLabel, tasiLine, gainersCount, losersCount, gainersBlock, newsBlock, forecast, commoditiesBlock });
+        const r = await fetchWithTimeout("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "trandsa@resend.dev",
+            to: ["aboamran2016@gmail.com"],
+            subject: `🌅 تقرير ترندسا الصباحي - ${dateLabel}`,
+            html: emailHtml,
+          }),
+          timeoutMs: 15000,
+        });
+        const d: any = await r.json().catch(() => ({}));
+        emailResult = r.ok ? `✅ أُرسل بنجاح عبر Resend (id: ${d.id})` : `❌ فشل Resend: ${d.message ?? r.status}`;
+      } catch (e: any) {
+        emailResult = `❌ خطأ Resend: ${(e as Error).message}`;
+      }
+    } else {
+      emailResult = "❌ RESEND_API_KEY غير مضبوط في env";
     }
   }
 
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ steps, message, sendResult }, null, 2),
+    body: JSON.stringify({ steps, message, telegramResult, emailResult }, null, 2),
   };
 };

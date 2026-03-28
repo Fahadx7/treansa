@@ -347,6 +347,137 @@ ${newsText || 'لا توجد أخبار'}
   }
 }
 
+// ─── Email sender (Resend) ────────────────────────────────────────────────────
+
+function buildEmailHtml(opts: {
+  dateLabel: string;
+  tasiLine: string;
+  gainersCount: number;
+  losersCount: number;
+  commoditiesBlock: string | null;
+  gainersBlock: string;
+  losersBlock: string;
+  newsBlock: string;
+  forecast: string;
+}): string {
+  const { dateLabel, tasiLine, gainersCount, losersCount, commoditiesBlock, gainersBlock, losersBlock, newsBlock, forecast } = opts;
+
+  const sectionStyle = 'background:#161b22;border-right:3px solid #00d4aa;border-radius:8px;padding:16px 20px;margin-bottom:16px;';
+  const labelStyle = 'color:#00d4aa;font-weight:bold;font-size:14px;margin-bottom:10px;display:block;';
+  const rowStyle = 'color:#e6edf3;font-size:14px;line-height:1.8;direction:rtl;text-align:right;';
+  const mutedStyle = 'color:#8b949e;font-size:12px;';
+
+  const commHtml = commoditiesBlock
+    ? `<div style="${sectionStyle}">
+        <span style="${labelStyle}">🛢️ السلع العالمية</span>
+        <div style="${rowStyle}">${commoditiesBlock.replace(/^🛢️ \*السلع العالمية:\*\n/, '').split('\n').map(l => `${l}<br/>`).join('')}</div>
+      </div>`
+    : '';
+
+  const losersHtml = losersBlock
+    ? `<div style="${sectionStyle}border-right-color:#ff3d5a;">
+        <span style="color:#ff3d5a;font-weight:bold;font-size:14px;margin-bottom:10px;display:block;">📉 أبرز الهابطين</span>
+        <div style="${rowStyle}">${losersBlock.split('\n').map(l => `${l}<br/>`).join('')}</div>
+      </div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#0d1117;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:24px 16px;">
+
+    <!-- Header -->
+    <div style="text-align:center;padding:24px 0 16px;">
+      <div style="font-size:28px;font-weight:900;color:#00d4aa;letter-spacing:1px;">ترندسا</div>
+      <div style="font-size:13px;color:#8b949e;margin-top:4px;">منصة تحليل السوق السعودي</div>
+    </div>
+
+    <!-- Title bar -->
+    <div style="background:linear-gradient(135deg,#00d4aa22,#00d4aa08);border:1px solid #00d4aa33;border-radius:12px;padding:16px;text-align:center;margin-bottom:20px;">
+      <div style="font-size:18px;font-weight:bold;color:#e6edf3;">🌅 تقرير ترندسا الصباحي</div>
+      <div style="font-size:13px;color:#8b949e;margin-top:6px;">📅 ${dateLabel} &nbsp;|&nbsp; ⏰ قبل 30 دقيقة من افتتاح السوق</div>
+    </div>
+
+    <!-- Market -->
+    <div style="${sectionStyle}">
+      <span style="${labelStyle}">📊 السوق أمس</span>
+      <div style="${rowStyle}">
+        المؤشر: ${tasiLine}<br/>
+        📈 صاعد: <span style="color:#00d4aa">${gainersCount}</span> &nbsp;|&nbsp; 📉 هابط: <span style="color:#ff3d5a">${losersCount}</span>
+      </div>
+    </div>
+
+    <!-- Commodities -->
+    ${commHtml}
+
+    <!-- Gainers -->
+    <div style="${sectionStyle}">
+      <span style="${labelStyle}">🔥 أبرز الصاعدين</span>
+      <div style="${rowStyle}">${gainersBlock.split('\n').map(l => `<span style="color:#00d4aa">${l}</span><br/>`).join('')}</div>
+    </div>
+
+    <!-- Losers -->
+    ${losersHtml}
+
+    <!-- News -->
+    <div style="${sectionStyle}border-right-color:#58a6ff;">
+      <span style="color:#58a6ff;font-weight:bold;font-size:14px;margin-bottom:10px;display:block;">📰 أخبار مؤثرة</span>
+      <div style="${rowStyle}">${newsBlock.split('\n').map(l => `${l}<br/>`).join('')}</div>
+    </div>
+
+    <!-- Forecast -->
+    <div style="background:linear-gradient(135deg,#1a2332,#161b22);border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin-bottom:16px;">
+      <span style="${labelStyle}">🎯 توقع اليوم</span>
+      <div style="color:#e6edf3;font-size:15px;line-height:1.7;direction:rtl;text-align:right;">${forecast}</div>
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align:center;padding:16px 0;border-top:1px solid #21262d;margin-top:8px;">
+      <div style="${mutedStyle}">💡 للاستشارة والتثقيف المالي فقط</div>
+      <div style="${mutedStyle};margin-top:4px;">
+        <a href="https://trandsa2030.netlify.app" style="color:#00d4aa;text-decoration:none;">trandsa2030.netlify.app</a>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
+async function sendEmail(opts: {
+  subject: string;
+  html: string;
+}): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error('[morning-report] RESEND_API_KEY not set — skipping email');
+    return;
+  }
+  try {
+    const res = await fetchWithTimeout('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'trandsa@resend.dev',
+        to: ['aboamran2016@gmail.com'],
+        subject: opts.subject,
+        html: opts.html,
+      }),
+      timeoutMs: 15000,
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({}));
+      console.error('[morning-report] Resend error:', err.message ?? res.status);
+    }
+  } catch (e: any) {
+    console.error('[morning-report] sendEmail failed:', e.message);
+  }
+}
+
 // ─── Telegram sender ──────────────────────────────────────────────────────────
 
 async function sendTelegram(text: string): Promise<void> {
@@ -531,8 +662,26 @@ export default async function handler(): Promise<Response> {
     .filter((line) => line !== null && line !== undefined)
     .join('\n');
 
-  // 8. Send
-  await sendTelegram(message);
+  // 8. Build email HTML and send both Telegram + Email in parallel
+  const emailHtml = buildEmailHtml({
+    dateLabel,
+    tasiLine,
+    gainersCount,
+    losersCount,
+    commoditiesBlock: commoditiesBlock ?? null,
+    gainersBlock: gainersBlock || '• لا بيانات',
+    losersBlock,
+    newsBlock,
+    forecast,
+  });
+
+  await Promise.all([
+    sendTelegram(message),
+    sendEmail({
+      subject: `🌅 تقرير ترندسا الصباحي - ${dateLabel}`,
+      html: emailHtml,
+    }),
+  ]);
 
   console.log('[morning-report] Done — report sent for %s', dateLabel);
   return new Response('OK', { status: 200 });
