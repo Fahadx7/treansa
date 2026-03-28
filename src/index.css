@@ -268,7 +268,16 @@ body { overscroll-behavior-y: none; }
 /* ─── Ticker tape ─── */
 @keyframes ticker-scroll {
   from { transform: translateX(0); }
-  to   { transform: translateX(-33.333%); }
+  to   { transform: translateX(-50%); }
+}
+.ticker-marquee {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 28s linear infinite;
+  will-change: transform;
+}
+.ticker-marquee:hover {
+  animation-play-state: paused;
 }
 
 /* ─── Modal shadow ─── */

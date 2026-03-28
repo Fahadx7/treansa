@@ -1954,6 +1954,75 @@ const AlertsModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
+// ─── Index Ticker Bar ────────────────────────────────────────────────────────
+
+interface TickerIndex {
+  label: string;
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+}
+
+function IndexTickerBar({ indices }: { indices: TickerIndex[] }) {
+  const renderItem = (item: TickerIndex, key: string) => {
+    const up = (item.changePercent ?? 0) >= 0;
+    const priceColor = item.price !== null ? 'white' : 'rgba(255,255,255,0.2)';
+    const changeColor = up ? '#3fb950' : '#f85149';
+    return (
+      <span key={key} className="flex items-center gap-2 shrink-0">
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 500, letterSpacing: '0.01em' }}>{item.label}</span>
+        {item.price !== null ? (
+          <>
+            <span style={{ fontSize: 12, fontWeight: 700, color: priceColor, fontFamily: "'JetBrains Mono', monospace" }}>
+              {item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {item.change !== null && item.changePercent !== null && (
+              <span style={{ fontSize: 10, fontWeight: 600, color: changeColor, fontFamily: "'JetBrains Mono', monospace" }}>
+                {up ? '▲' : '▼'} {Math.abs(item.change).toFixed(2)} ({Math.abs(item.changePercent).toFixed(2)}%)
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', fontFamily: "'JetBrains Mono', monospace" }}>—</span>
+        )}
+      </span>
+    );
+  };
+
+  // Duplicate items for seamless marquee loop on mobile
+  const doubled = [...indices, ...indices];
+
+  return (
+    <div
+      className="sticky z-[90] safe-top overflow-hidden"
+      style={{ top: 0, background: '#1a1a2e', borderBottom: '1px solid rgba(255,255,255,0.06)', height: 40 }}
+    >
+      {/* Desktop: static row */}
+      <div className="hidden md:flex items-center h-full max-w-7xl mx-auto px-4">
+        {indices.map((item, idx) => (
+          <React.Fragment key={item.label}>
+            {idx > 0 && (
+              <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)', margin: '0 18px', flexShrink: 0 }} />
+            )}
+            {renderItem(item, item.label)}
+          </React.Fragment>
+        ))}
+      </div>
+      {/* Mobile: marquee */}
+      <div className="flex md:hidden items-center h-full overflow-hidden">
+        <div className="ticker-marquee gap-8 pl-4">
+          {doubled.map((item, idx) => (
+            <React.Fragment key={`${item.label}-${idx}`}>
+              {renderItem(item, `${item.label}-${idx}`)}
+              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 12px', flexShrink: 0 }} />
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Commodities Bar ─────────────────────────────────────────────────────────
 
 interface CommodityItem {
@@ -2046,6 +2115,7 @@ function App() {
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
   const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor'>('home');
+  const [indexQuotes, setIndexQuotes] = useState<Record<string, { price: number; change: number; changePercent: number }>>({});
   const [commodities, setCommodities] = useState<CommodityItem[]>([]);
   const [commoditiesLoading, setCommoditiesLoading] = useState(true);
   const [themeSpin, setThemeSpin] = useState(false);
@@ -2571,6 +2641,31 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
+  // Index quotes for ticker bar (MT30, NOMU) — refresh every 5 min
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/api/quotes?symbols=%5EMT30,%5ENOMU,%5ESUKUKAR');
+        if (!res.ok) return;
+        const data = await res.json();
+        const map: Record<string, { price: number; change: number; changePercent: number }> = {};
+        for (const q of (data.result ?? [])) {
+          if (typeof q.regularMarketPrice === 'number') {
+            map[q.symbol] = {
+              price: q.regularMarketPrice,
+              change: q.regularMarketChange ?? 0,
+              changePercent: q.regularMarketChangePercent ?? 0,
+            };
+          }
+        }
+        if (Object.keys(map).length > 0) setIndexQuotes(map);
+      } catch { /* silent fail */ }
+    };
+    load();
+    const t = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const TradeRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const trade = status?.activeTrades[index];
     if (!trade) return null;
@@ -2783,10 +2878,42 @@ function App() {
         </span>
       </motion.button>
 
+      {/* ── Index Ticker Bar ────────────────────────────────────────────── */}
+      {(() => {
+        const indices: TickerIndex[] = [
+          {
+            label: 'تاسي',
+            price: tasiData?.price ?? null,
+            change: tasiData?.change ?? null,
+            changePercent: tasiData?.changePercent ?? null,
+          },
+          {
+            label: 'إم تي 30',
+            price: indexQuotes['^MT30']?.price ?? null,
+            change: indexQuotes['^MT30']?.change ?? null,
+            changePercent: indexQuotes['^MT30']?.changePercent ?? null,
+          },
+          {
+            label: 'نمو',
+            price: indexQuotes['^NOMU']?.price ?? null,
+            change: indexQuotes['^NOMU']?.change ?? null,
+            changePercent: indexQuotes['^NOMU']?.changePercent ?? null,
+          },
+          {
+            label: 'الصكوك',
+            price: indexQuotes['^SUKUKAR']?.price ?? null,
+            change: indexQuotes['^SUKUKAR']?.change ?? null,
+            changePercent: indexQuotes['^SUKUKAR']?.changePercent ?? null,
+          },
+        ];
+        return <IndexTickerBar indices={indices} />;
+      })()}
+
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header
-        className="sticky top-0 z-[80] safe-top"
+        className="sticky z-[80] safe-top"
         style={{
+          top: 40,
           background: '#0a0f1e',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           height: 60,
@@ -2942,7 +3069,7 @@ function App() {
 
       {/* ── Page Navigation Bar ─────────────────────────────────────────── */}
       <nav
-        className="sticky top-[60px] z-[70]"
+        className="sticky top-[100px] z-[70]"
         style={{ background: 'rgba(6,11,20,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(99,179,237,0.1)' }}
       >
         <div className="max-w-7xl mx-auto px-4">
@@ -3096,13 +3223,13 @@ function App() {
                   {/* Big price number */}
                   <div className="mb-1">
                     {hasPrice ? (
-                      <div style={{ fontSize: 40, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
+                      <div style={{ fontSize: 42, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
                         {displayPrice.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     ) : isLoadingData ? (
                       <div className="animate-pulse h-10 w-48 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)' }} />
                     ) : (
-                      <div style={{ fontSize: 40, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.25)', lineHeight: 1 }}>—</div>
+                      <div style={{ fontSize: 42, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.25)', lineHeight: 1 }}>—</div>
                     )}
                   </div>
 
