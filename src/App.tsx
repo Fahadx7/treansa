@@ -2645,7 +2645,7 @@ function App() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch('/api/quotes?symbols=%5EMT30,%5ENOMU,%5ESUKUKAR');
+        const res = await fetch('/api/quotes?symbols=%5ETASM30,%5ETASASI');
         if (!res.ok) return;
         const data = await res.json();
         const map: Record<string, { price: number; change: number; changePercent: number }> = {};
@@ -2889,21 +2889,21 @@ function App() {
           },
           {
             label: 'إم تي 30',
-            price: indexQuotes['^MT30']?.price ?? null,
-            change: indexQuotes['^MT30']?.change ?? null,
-            changePercent: indexQuotes['^MT30']?.changePercent ?? null,
+            price: indexQuotes['^TASM30']?.price ?? null,
+            change: indexQuotes['^TASM30']?.change ?? null,
+            changePercent: indexQuotes['^TASM30']?.changePercent ?? null,
           },
           {
             label: 'نمو',
-            price: indexQuotes['^NOMU']?.price ?? null,
-            change: indexQuotes['^NOMU']?.change ?? null,
-            changePercent: indexQuotes['^NOMU']?.changePercent ?? null,
+            price: indexQuotes['^TASASI']?.price ?? null,
+            change: indexQuotes['^TASASI']?.change ?? null,
+            changePercent: indexQuotes['^TASASI']?.changePercent ?? null,
           },
           {
             label: 'الصكوك',
-            price: indexQuotes['^SUKUKAR']?.price ?? null,
-            change: indexQuotes['^SUKUKAR']?.change ?? null,
-            changePercent: indexQuotes['^SUKUKAR']?.changePercent ?? null,
+            price: 920.19,
+            change: null,
+            changePercent: null,
           },
         ];
         return <IndexTickerBar indices={indices} />;
