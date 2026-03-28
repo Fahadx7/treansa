@@ -3115,213 +3115,101 @@ function App() {
             <button onClick={runMarketScan} className="text-xs underline underline-offset-2 whitespace-nowrap">إعادة المحاولة</button>
           </div>
         )}
-        {/* ── TASI Index Card ────────────────────────────────────────────── */}
-        {(() => {
-          const tickers   = status?.tickerData ?? [];
-          const gainers   = tickers.filter(s => s.change > 0).length;
-          const losers    = tickers.filter(s => s.change < 0).length;
-          const unchanged = tickers.length - gainers - losers;
-          const price     = tasiData?.price ?? 0;
-          const chg       = tasiData?.change ?? 0;
-          const chgPct    = tasiData?.changePercent ?? 0;
-          const isUp      = chgPct >= 0;
-          const hasMkt    = tickers.length > 0;
-          const displayPrice  = price > 0 ? price : 0;
-          const hasPrice      = displayPrice > 0;
+        {/* ── TASI Widget + Stats Grid ─────────────────────────────────── */}
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
 
-          // Saudi market hours: Sun–Thu 10:00–15:00 AST (UTC+3)
-          const nowSaudi  = new Date(Date.now() + 3 * 3600_000);
-          const saudiDay  = nowSaudi.getUTCDay();   // 0=Sun … 6=Sat
-          const saudiHour = nowSaudi.getUTCHours();
-          const saudiMin  = nowSaudi.getUTCMinutes();
-          const isWeekday = saudiDay >= 0 && saudiDay <= 4; // Sun=0, Thu=4
-          const isInHours = (saudiHour > 10 || (saudiHour === 10 && saudiMin >= 0)) && saudiHour < 15;
-          const isMarketOpen = isWeekday && isInHours;
-          const updatedStr = tasiLastUpdated
-            ? tasiLastUpdated.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-            : null;
-
-          // ── Sparkline SVG ──
-          const sparkPrices = tasiHistoryRef.current;
-          const SparkLine = () => {
-            if (sparkPrices.length < 2) return null;
-            const W = 100, H = 44;
-            const mn = Math.min(...sparkPrices), mx = Math.max(...sparkPrices);
-            const range = mx - mn || 1;
-            const pts = sparkPrices.map((v, i) => {
-              const x = (i / (sparkPrices.length - 1)) * W;
-              const y = H - ((v - mn) / range) * H;
-              return `${x},${y}`;
-            });
-            const polyline = pts.join(' ');
-            const areaPath = `M${pts[0]} L${pts.join(' L')} L${W},${H} L0,${H} Z`;
-            const lineColor = isUp ? '#00c896' : '#ff3d5a';
+          {/* Compact TASI widget — 280px, floated right in RTL */}
+          {(() => {
+            const tickers  = status?.tickerData ?? [];
+            const gainers  = tickers.filter(s => s.change > 0).length;
+            const losers   = tickers.filter(s => s.change < 0).length;
+            const unchanged = tickers.length - gainers - losers;
+            const price    = tasiData?.price ?? 0;
+            const chg      = tasiData?.change ?? 0;
+            const chgPct   = tasiData?.changePercent ?? 0;
+            const isUp     = chgPct >= 0;
+            const hasPrice = price > 0;
             return (
-              <svg viewBox={`0 0 ${W} ${H}`} width={100} height={44} className="tasi-sparkline" style={{ overflow: 'visible' }}>
-                <defs>
-                  <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
-                    <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d={areaPath} fill="url(#spark-grad)" />
-                <polyline points={polyline} fill="none" stroke={lineColor} strokeWidth="2" />
-              </svg>
-            );
-          };
-
-          return (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              style={{
-                background: 'linear-gradient(135deg, #0d1928 0%, #111f35 100%)',
-                borderRadius: 16,
-                border: '1px solid rgba(99,179,237,0.1)',
-                borderRight: '3px solid #00d4aa',
-                padding: '20px 24px',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-              }}
-            >
-              {/* ── Title row ── */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-white" style={{ fontSize: 14, fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
-                    المؤشر العام - تاسي
-                  </span>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.06em' }}>TASI</span>
-                  <span
-                    style={{
-                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                      background: isMarketOpen ? 'rgba(0,200,150,0.15)' : 'rgba(255,255,255,0.07)',
-                      border: `1px solid ${isMarketOpen ? 'rgba(0,200,150,0.35)' : 'rgba(255,255,255,0.12)'}`,
-                      color: isMarketOpen ? '#00c896' : 'rgba(255,255,255,0.4)',
-                    }}
-                  >
-                    {isMarketOpen ? '● مفتوح' : '● مغلق'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {updatedStr && (
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{updatedStr}</span>
-                  )}
-                  <button
-                    onClick={refreshTasi}
-                    title="تحديث"
-                    className="btn-icon"
-                    style={{ width: 28, height: 28, borderRadius: 8 }}
-                  >
-                    <RefreshCw className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.4)' }} />
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                style={{
+                  width: 280, flexShrink: 0,
+                  background: '#112240',
+                  border: '1px solid rgba(0,212,170,0.2)',
+                  borderRight: '3px solid #00d4aa',
+                  borderRadius: 10,
+                  padding: '12px 16px',
+                }}
+              >
+                {/* Line 1 */}
+                <div className="flex items-center justify-between mb-2">
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>المؤشر العام - تاسي</span>
+                  <button onClick={refreshTasi} title="تحديث" className="btn-icon" style={{ width: 22, height: 22, borderRadius: 6 }}>
+                    <RefreshCw className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.3)' }} />
                   </button>
                 </div>
-              </div>
-
-              {/* ── Main content: number + sparkline ── */}
-              <div className="flex items-end justify-between">
-                <div>
-                  {/* Big price number */}
-                  <div className="mb-1">
-                    {hasPrice ? (
-                      <div style={{ fontSize: 42, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
-                        {displayPrice.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    ) : isLoadingData ? (
-                      <div className="animate-pulse h-10 w-48 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)' }} />
-                    ) : (
-                      <div style={{ fontSize: 42, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.25)', lineHeight: 1 }}>—</div>
-                    )}
-                  </div>
-
-                  {/* Change row */}
-                  {hasPrice && (
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className="num font-bold flex items-center gap-1"
-                        style={{ fontSize: 18, color: isUp ? '#00c896' : '#ff3d5a' }}
-                      >
-                        {isUp ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                        {chg >= 0 ? '+' : ''}{chg.toFixed(2)}
-                      </span>
-                      <span
-                        className="num font-semibold px-2 py-0.5 rounded-full"
-                        style={{
-                          fontSize: 14,
-                          color: isUp ? '#00c896' : '#ff3d5a',
-                          background: isUp ? 'rgba(0,200,150,0.12)' : 'rgba(255,61,90,0.12)',
-                        }}
-                      >
-                        {chgPct >= 0 ? '+' : ''}{chgPct.toFixed(2)}%
-                      </span>
-                      {tasiData && tasiData.high > 0 && (
-                        <span className="hidden sm:flex items-center gap-3 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)', paddingRight: 10, borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 2 }}>
-                          <span>H <span className="num text-white font-semibold">{tasiData.high.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></span>
-                          <span>L <span className="num text-white font-semibold">{tasiData.low.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></span>
-                        </span>
-                      )}
-                    </div>
+                {/* Line 2 */}
+                <div className="flex items-baseline gap-2 mb-2">
+                  {hasPrice ? (
+                    <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
+                      {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  ) : isLoadingData ? (
+                    <div className="animate-pulse h-7 w-32 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                  ) : (
+                    <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.2)' }}>—</span>
                   )}
-                  {!hasPrice && hasMkt && <div style={{ height: 28 }} />}
+                  {hasPrice && (
+                    <span style={{ fontSize: 14, fontWeight: 700, color: isUp ? '#00c896' : '#ff3d5a', fontFamily: "'JetBrains Mono', monospace" }}>
+                      {isUp ? '▲' : '▼'} {Math.abs(chgPct).toFixed(2)}%
+                    </span>
+                  )}
                 </div>
+                {/* Line 3 */}
+                {tickers.length > 0 && (
+                  <div className="flex items-center gap-2" style={{ fontSize: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span>🟢 <span style={{ color: '#00c896', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{gainers}</span></span>
+                    <span style={{ color: 'rgba(255,255,255,0.15)' }}>|</span>
+                    <span>🔴 <span style={{ color: '#ff3d5a', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{losers}</span></span>
+                    <span style={{ color: 'rgba(255,255,255,0.15)' }}>|</span>
+                    <span>⚪ <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{unchanged}</span></span>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })()}
 
-                {/* Sparkline on the left (RTL: visually right side) */}
-                <div className="opacity-80 mb-1">
-                  <SparkLine />
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 flex-1">
+            {[
+              { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount  || 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
+              { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks.length  || 0, iconColor: 'text-amber-500',   delay: 0.07 },
+              { icon: Bell,       accent: 'accent-blue',     label: 'إجمالي التنبيهات', value: status?.alerts.length      || 0, iconColor: 'text-blue-400',    delay: 0.14 },
+              { icon: Bell,       accent: 'accent-amber',    label: 'تنبيهات مخصصة',    value: status?.customAlerts.length|| 0, iconColor: 'text-amber-400',   delay: 0.21 },
+              { icon: History,    accent: 'accent-slate',    label: 'الأسهم المفحوصة',  value: status?.totalCount         || 0, iconColor: 'text-app-text-muted', delay: 0.28 },
+            ].map(({ icon: Icon, accent, label, value, iconColor, delay }, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay, duration: 0.35, ease: 'easeOut' }}
+                className={`stat-card ${accent}`}
+              >
+                <div className="flex items-start justify-between mb-5">
+                  <div className={`p-2.5 rounded-xl bg-white/5 border border-white/8`}>
+                    <Icon className={`w-5 h-5 ${iconColor}`} />
+                  </div>
+                  <span style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">{label}</span>
                 </div>
-              </div>
+                <div className="num text-[2.25rem] font-extrabold leading-none tracking-tight text-app-text">
+                  {value.toLocaleString('ar-SA')}
+                </div>
+              </motion.div>
+            ))}
+          </div>
 
-              {/* ── Market breadth ── */}
-              {hasMkt && (
-                <div className="flex items-center gap-0 mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-                  {[
-                    { label: 'صاعد',  count: gainers,   color: '#00c896', bg: 'rgba(0,200,150,0.1)', dot: '🟢' },
-                    { label: 'هابط',  count: losers,    color: '#ff3d5a', bg: 'rgba(255,61,90,0.1)',  dot: '🔴' },
-                    { label: 'مستقر', count: unchanged, color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.06)', dot: '⚪' },
-                  ].map((item, i) => (
-                    <React.Fragment key={item.label}>
-                      {i > 0 && <div style={{ width: 1, height: 30, background: 'rgba(255,255,255,0.07)', margin: '0 16px' }} />}
-                      <div className="flex items-center gap-2 px-2 py-1 rounded-lg" style={{ background: item.bg }}>
-                        <span style={{ fontSize: 12 }}>{item.dot}</span>
-                        <span className="num font-bold" style={{ fontSize: 18, color: item.color, fontFamily: "'JetBrains Mono', monospace" }}>
-                          {item.count}
-                        </span>
-                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{item.label}</span>
-                      </div>
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          );
-        })()}
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
-          {[
-            { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount  || 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
-            { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks.length  || 0, iconColor: 'text-amber-500',   delay: 0.07 },
-            { icon: Bell,       accent: 'accent-blue',     label: 'إجمالي التنبيهات', value: status?.alerts.length      || 0, iconColor: 'text-blue-400',    delay: 0.14 },
-            { icon: Bell,       accent: 'accent-amber',    label: 'تنبيهات مخصصة',    value: status?.customAlerts.length|| 0, iconColor: 'text-amber-400',   delay: 0.21 },
-            { icon: History,    accent: 'accent-slate',    label: 'الأسهم المفحوصة',  value: status?.totalCount         || 0, iconColor: 'text-app-text-muted', delay: 0.28 },
-          ].map(({ icon: Icon, accent, label, value, iconColor, delay }, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay, duration: 0.35, ease: 'easeOut' }}
-              className={`stat-card ${accent}`}
-            >
-              <div className="flex items-start justify-between mb-5">
-                <div className={`p-2.5 rounded-xl bg-white/5 border border-white/8`}>
-                  <Icon className={`w-5 h-5 ${iconColor}`} />
-                </div>
-                <span style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">{label}</span>
-              </div>
-              <div className="num text-[2.25rem] font-extrabold leading-none tracking-tight text-app-text">
-                {value.toLocaleString('ar-SA')}
-              </div>
-            </motion.div>
-          ))}
         </div>
 
         {/* رادار الإشارات — stocks ranked by confluence score from available data */}
