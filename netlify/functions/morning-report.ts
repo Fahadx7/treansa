@@ -447,7 +447,7 @@ export default async function handler(): Promise<Response> {
   const commoditiesBlock =
     brent || gold
       ? [
-          `🛢️ *النفط والمعادن:*`,
+          `🛢️ *السلع العالمية:*`,
           brent
             ? `• برنت: $${brent.price.toFixed(2)} (${brent.changePercent >= 0 ? '+' : ''}${brent.changePercent.toFixed(2)}%)`
             : null,

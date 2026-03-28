@@ -105,6 +105,30 @@ async function fetchTopStocks(crumb: string, cookies: string) {
   }
 }
 
+async function fetchCommodities(crumb: string, cookies: string): Promise<{ brent: number | null; brentChg: number | null; gold: number | null; goldChg: number | null }> {
+  const cq = crumb ? `&crumb=${encodeURIComponent(crumb)}` : "";
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=BZ%3DF%2CGC%3DF${cq}`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { "User-Agent": YF_UA, Accept: "application/json", Cookie: cookies },
+      timeoutMs: 8000,
+    });
+    if (!res.ok) return { brent: null, brentChg: null, gold: null, goldChg: null };
+    const data: any = await res.json();
+    const results: any[] = data?.quoteResponse?.result ?? [];
+    const brentQ = results.find((q: any) => q.symbol === "BZ=F");
+    const goldQ = results.find((q: any) => q.symbol === "GC=F");
+    return {
+      brent: brentQ?.regularMarketPrice ?? null,
+      brentChg: brentQ?.regularMarketChangePercent ?? null,
+      gold: goldQ?.regularMarketPrice ?? null,
+      goldChg: goldQ?.regularMarketChangePercent ?? null,
+    };
+  } catch {
+    return { brent: null, brentChg: null, gold: null, goldChg: null };
+  }
+}
+
 async function fetchNews(): Promise<string[]> {
   try {
     const url =
@@ -184,20 +208,27 @@ export const handler: Handler = async (event) => {
   const sorted = [...quotes].sort((a: any, b: any) => b.regularMarketChangePercent - a.regularMarketChangePercent);
   const gainers = sorted.filter((q: any) => q.regularMarketChangePercent > 0).slice(0, 3);
   const losers = sorted.filter((q: any) => q.regularMarketChangePercent < 0).reverse().slice(0, 3);
-  steps.push(`✅ أسهم: ${quotes.length} سهم، صاعد: ${gainers.length}، هابط: ${losers.length}`);
+  const gainersCount = sorted.filter((q: any) => q.regularMarketChangePercent > 0).length;
+  const losersCount = sorted.filter((q: any) => q.regularMarketChangePercent < 0).length;
+  steps.push(`✅ أسهم: ${quotes.length} سهم، صاعد: ${gainersCount}، هابط: ${losersCount}`);
 
-  // 4. News
+  // 4. Commodities
+  steps.push("جاري جلب السلع العالمية...");
+  const comm = await fetchCommodities(crumb, cookies);
+  steps.push(comm.brent != null ? `✅ برنت: $${comm.brent.toFixed(2)}, ذهب: $${(comm.gold ?? 0).toFixed(0)}` : "⚠️ السلع غير متاحة");
+
+  // 5. News
   steps.push("جاري جلب الأخبار...");
   const news = await fetchNews();
   steps.push(`✅ أخبار: ${news.length} خبر`);
 
-  // 5. Claude
+  // 6. Claude
   steps.push("جاري توليد التحليل بـ Claude...");
-  const prompt = `أنت محلل مالي. اكتب توقعاً مختصراً لجلسة السوق السعودي اليوم في جملتين فقط بالعربية. البيانات: تاسي ${tasi?.price.toFixed(2) ?? "غير متاح"}، أبرز الصاعدين: ${gainers.map((g: any) => g.shortName || g.symbol).join("، ")}.`;
+  const prompt = `أنت محلل مالي. اكتب توقعاً مختصراً لجلسة السوق السعودي اليوم في جملتين فقط بالعربية. البيانات: تاسي ${tasi?.price.toFixed(2) ?? "غير متاح"}، أبرز الصاعدين: ${gainers.map((g: any) => arabicName(g.symbol, g.shortName)).join("، ")}.`;
   const forecast = await claudeForecast(prompt);
   steps.push(`✅ Claude: ${forecast.slice(0, 60)}...`);
 
-  // 6. Build message
+  // 7. Build message
   const dateLabel = riyadhDate();
   const tasiLine = tasi
     ? `${tasi.price.toFixed(2)} نقطة ${tasi.changePercent >= 0 ? "▲" : "▼"} ${Math.abs(tasi.changePercent).toFixed(2)}%`
@@ -209,6 +240,15 @@ export const handler: Handler = async (event) => {
 
   const newsBlock = news.slice(0, 3).map((n) => `• ${n}`).join("\n") || "• لا أخبار";
 
+  const fmtChg = (v: number | null) => v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "—";
+  const commoditiesBlock = comm.brent != null || comm.gold != null
+    ? [
+        `🛢️ *السلع العالمية:*`,
+        comm.brent != null ? `• برنت: $${comm.brent.toFixed(2)} (${fmtChg(comm.brentChg)})` : null,
+        comm.gold != null ? `• ذهب: $${comm.gold!.toFixed(0)} (${fmtChg(comm.goldChg)})` : null,
+      ].filter(Boolean).join("\n")
+    : null;
+
   const message = [
     `🌅 *تقرير ترندسا الصباحي*`,
     `📅 ${dateLabel}`,
@@ -216,7 +256,8 @@ export const handler: Handler = async (event) => {
     ``,
     `📊 *السوق:*`,
     `• المؤشر: ${tasiLine}`,
-    `• صاعد: ${gainers.length} | هابط: ${losers.length}`,
+    `• صاعد: ${gainersCount} | هابط: ${losersCount}`,
+    commoditiesBlock ? `\n${commoditiesBlock}` : null,
     ``,
     `🔥 *أبرز الصاعدين:*`,
     gainersBlock,
@@ -229,7 +270,7 @@ export const handler: Handler = async (event) => {
     ``,
     `⚠️ للاستشارة فقط وليس توصية مالية`,
     `🔗 trandsa2030.netlify.app`,
-  ].join("\n");
+  ].filter((l) => l !== null).join("\n");
 
   // 7. Optionally send
   let sendResult = "لم يُرسَل (أضف ?send=1 للإرسال)";
