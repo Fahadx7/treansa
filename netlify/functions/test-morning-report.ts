@@ -7,6 +7,12 @@
  */
 
 import type { Handler } from "@netlify/functions";
+import { SAUDI_STOCKS } from "../../src/symbols";
+
+function arabicName(symbol: string, shortName?: string): string {
+  const code = symbol.replace(".SR", "");
+  return SAUDI_STOCKS[code] || shortName || symbol;
+}
 
 const YF_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -198,7 +204,7 @@ export const handler: Handler = async (event) => {
     : "— غير متاح";
 
   const gainersBlock = gainers.map((s: any) =>
-    `• ${s.shortName || s.symbol}: +${s.regularMarketChangePercent.toFixed(2)}%`
+    `• ${arabicName(s.symbol, s.shortName)}: +${s.regularMarketChangePercent.toFixed(2)}%`
   ).join("\n") || "• لا بيانات";
 
   const newsBlock = news.slice(0, 3).map((n) => `• ${n}`).join("\n") || "• لا أخبار";

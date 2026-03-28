@@ -4,6 +4,14 @@
  * Generates an Arabic morning briefing and sends it via Telegram.
  */
 
+import { SAUDI_STOCKS } from '../../src/symbols';
+
+/** Return Arabic name for a stock symbol, falling back to shortName then symbol. */
+function arabicName(symbol: string, shortName?: string): string {
+  const code = symbol.replace('.SR', '');
+  return SAUDI_STOCKS[code] || shortName || symbol;
+}
+
 // ─── Yahoo Finance helpers ───────────────────────────────────────────────────
 
 const YF_UA =
@@ -201,12 +209,12 @@ async function claudeBriefing(opts: {
 
   const gainersText = gainers
     .slice(0, 3)
-    .map((s) => `${s.shortName || s.symbol}: ${s.regularMarketChangePercent.toFixed(2)}%`)
+    .map((s) => `${arabicName(s.symbol, s.shortName)}: ${s.regularMarketChangePercent.toFixed(2)}%`)
     .join('، ');
 
   const losersText = losers
     .slice(0, 3)
-    .map((s) => `${s.shortName || s.symbol}: ${s.regularMarketChangePercent.toFixed(2)}%`)
+    .map((s) => `${arabicName(s.symbol, s.shortName)}: ${s.regularMarketChangePercent.toFixed(2)}%`)
     .join('، ');
 
   const newsText = newsItems
@@ -381,11 +389,11 @@ export default async function handler(): Promise<Response> {
       : '— (غير متاح)';
 
   const gainersBlock = gainers
-    .map((s) => `• ${s.shortName || s.symbol}: ${s.regularMarketChangePercent >= 0 ? '+' : ''}${s.regularMarketChangePercent.toFixed(2)}%`)
+    .map((s) => `• ${arabicName(s.symbol, s.shortName)}: +${s.regularMarketChangePercent.toFixed(2)}%`)
     .join('\n');
 
   const losersBlock = losers
-    .map((s) => `• ${s.shortName || s.symbol}: ${s.regularMarketChangePercent.toFixed(2)}%`)
+    .map((s) => `• ${arabicName(s.symbol, s.shortName)}: ${s.regularMarketChangePercent.toFixed(2)}%`)
     .join('\n');
 
   const newsBlock = newsItems
