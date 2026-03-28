@@ -643,12 +643,23 @@ app.get("/api/quotes", async (req, res) => {
 // ── Raw OHLCV chart data (browser → Netlify → Yahoo Finance, no CORS issues)
 app.get("/api/chart/:symbol", async (req, res) => {
     const { symbol } = req.params;
+    const range = (req.query.range as string) || '1mo';
     if (!isValidSaudiSymbol(symbol))
         return res.status(400).json({ success: false, error: 'رمز غير صالح' });
+
+    const RANGES: Record<string, { interval: string; days: number }> = {
+        '1d':  { interval: '5m',  days: 1    },
+        '1w':  { interval: '15m', days: 7    },
+        '1mo': { interval: '1h',  days: 30   },
+        '6mo': { interval: '1d',  days: 180  },
+        '1y':  { interval: '1d',  days: 365  },
+        '5y':  { interval: '1wk', days: 1825 },
+    };
+    const cfg = RANGES[range] ?? RANGES['1mo'];
+
     try {
-        const period1 = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
-        const { meta, quotes } = await yfChart(symbol, '1h', period1);
-        // Serialize Date objects to ISO strings so JSON round-trips cleanly
+        const period1 = Math.floor(Date.now() / 1000) - cfg.days * 24 * 60 * 60;
+        const { meta, quotes } = await yfChart(symbol, cfg.interval, period1);
         const serialized = quotes.map(q => ({ ...q, date: (q.date as Date).toISOString() }));
         res.json({ success: true, meta, quotes: serialized });
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }

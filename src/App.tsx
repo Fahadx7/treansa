@@ -93,6 +93,7 @@ import {
   buildStockFromQuote,
   buildHistoryFromChart,
   computeIndicators,
+  type ChartRange,
   enrichStocksWithChartData,
   getAllSymbols,
   loadCache,
@@ -530,6 +531,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
     return all.filter(a => a.symbol === stock.symbol);
   });
   const [alertStatus, setAlertStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
+  const [chartPeriod, setChartPeriod] = useState<ChartRange>('1mo');
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -638,8 +640,8 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
       setLoadingHistory(true);
       setHistoryError(null);
       try {
-        const { meta, quotes } = await fetchChart(stock.symbol, '1h', '30d');
-        const hist = buildHistoryFromChart(meta, quotes);
+        const { meta, quotes } = await fetchChart(stock.symbol, chartPeriod);
+        const hist = buildHistoryFromChart(meta, quotes, chartPeriod);
         if (hist.length > 0) {
           setHistory(hist);
           setLiveIndicators(computeIndicators(quotes));
@@ -654,7 +656,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
       }
     };
     loadHistory();
-  }, [stock.symbol]);
+  }, [stock.symbol, chartPeriod]);
 
   const handleSetAlert = async () => {
     const price = parseFloat(targetPrice);
@@ -849,11 +851,44 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                   })()}
 
                   <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-emerald-500" />
-                      الرسم البياني والمؤشرات
-                    </h3>
-                    
+                    {/* Chart header + period selector */}
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-500" />
+                        الرسم البياني والمؤشرات
+                      </h3>
+                      {/* Period pill tabs */}
+                      <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        {([
+                          { id: '1d',  label: 'يوم'    },
+                          { id: '1w',  label: 'أسبوع'  },
+                          { id: '1mo', label: 'شهر'    },
+                          { id: '6mo', label: '6 أشهر' },
+                          { id: '1y',  label: 'سنة'    },
+                          { id: '5y',  label: '5 سنوات'},
+                        ] as { id: ChartRange; label: string }[]).map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => setChartPeriod(p.id)}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: 8,
+                              border: 'none',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              background: chartPeriod === p.id ? '#00d4aa' : 'transparent',
+                              color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="h-[300px] min-h-[300px] w-full bg-app-bg/20 rounded-2xl border border-app-border p-4 relative">
                       {loadingHistory ? (
                         <div className="absolute inset-0 flex items-center justify-center">

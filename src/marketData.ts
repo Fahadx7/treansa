@@ -28,9 +28,9 @@ export function saveCache(stocks: any[], marketIndex: any): void {
   } catch { /* storage full */ }
 }
 
-function loadChartCache(symbol: string): { meta: any; quotes: any[] } | null {
+function loadChartCache(key: string): { meta: any; quotes: any[] } | null {
   try {
-    const raw = localStorage.getItem(CHART_CACHE_PFX + symbol);
+    const raw = localStorage.getItem(CHART_CACHE_PFX + key);
     if (!raw) return null;
     const p = JSON.parse(raw);
     if (Date.now() - p.savedAt > CHART_CACHE_TTL) return null;
@@ -38,10 +38,10 @@ function loadChartCache(symbol: string): { meta: any; quotes: any[] } | null {
   } catch { return null; }
 }
 
-function saveChartCache(symbol: string, meta: any, quotes: any[]): void {
+function saveChartCache(key: string, meta: any, quotes: any[]): void {
   try {
     const s = quotes.map(q => ({ ...q, date: (q.date as Date).toISOString() }));
-    localStorage.setItem(CHART_CACHE_PFX + symbol, JSON.stringify({ meta, quotes: s, savedAt: Date.now() }));
+    localStorage.setItem(CHART_CACHE_PFX + key, JSON.stringify({ meta, quotes: s, savedAt: Date.now() }));
   } catch { /* ignore */ }
 }
 
@@ -178,20 +178,22 @@ export async function fetchQuotesBatch(symbols: string[]): Promise<any[]> {
   return data.result ?? [];
 }
 
+export type ChartRange = '1d' | '1w' | '1mo' | '6mo' | '1y' | '5y';
+
 export async function fetchChart(
   symbol: string,
-  _interval: string,
-  _range: string,
+  range: ChartRange = '1mo',
 ): Promise<{ meta: any; quotes: any[] }> {
-  const cached = loadChartCache(symbol);
+  const cacheKey = `${symbol}_${range}`;
+  const cached = loadChartCache(cacheKey);
   if (cached) return cached;
 
-  const res = await fetch(`/api/chart/${encodeURIComponent(symbol)}`);
+  const res = await fetch(`/api/chart/${encodeURIComponent(symbol)}?range=${range}`);
   if (!res.ok) throw new Error(`Chart API: HTTP ${res.status}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'فشل جلب بيانات الرسم البياني');
   const quotes = (data.quotes as any[]).map(q => ({ ...q, date: new Date(q.date) }));
-  saveChartCache(symbol, data.meta, quotes);
+  saveChartCache(cacheKey, data.meta, quotes);
   return { meta: data.meta, quotes };
 }
 
@@ -454,7 +456,7 @@ export async function enrichStocksWithChartData(
   for (let i = 0; i < candidates.length; i += ENRICH_BATCH) {
     const batch = candidates.slice(i, i + ENRICH_BATCH);
     const results = await Promise.allSettled(
-      batch.map(s => fetchChart(s.symbol, '1h', '30d')),
+      batch.map(s => fetchChart(s.symbol, '1mo')),
     );
     let changed = false;
     for (let j = 0; j < batch.length; j++) {
@@ -478,18 +480,28 @@ export async function enrichStocksWithChartData(
   }
 }
 
-export function buildHistoryFromChart(meta: any, quotes: any[]): any[] {
-  const N          = 50;
-  const start      = Math.max(0, quotes.length - N);
-  const allCloses  = quotes.map((q: any) => q.close as number);
+function formatChartTime(date: Date, range: ChartRange): string {
+  if (range === '1d' || range === '1w') {
+    return date.toLocaleTimeString('en-SA', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+  if (range === '1mo' || range === '6mo') {
+    return date.toLocaleDateString('en-SA', { day: '2-digit', month: '2-digit' });
+  }
+  // 1y, 5y
+  return date.toLocaleDateString('en-SA', { month: 'short', year: '2-digit' });
+}
 
-  return quotes.slice(start).map((q: any, i: number) => {
-    const actual    = start + i;
-    const subCloses = allCloses.slice(0, actual + 1);
+export function buildHistoryFromChart(meta: any, quotes: any[], range: ChartRange = '1mo'): any[] {
+  // For short ranges keep indicators (need at least 26 bars for MACD)
+  // For all ranges use all available quotes (no 50-bar cap)
+  const allCloses = quotes.map((q: any) => q.close as number);
+
+  return quotes.map((q: any, i: number) => {
+    const subCloses = allCloses.slice(0, i + 1);
     const m = calcMACD(subCloses);
     const b = calcBB(subCloses);
     return {
-      time:      new Date(q.date).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+      time:      formatChartTime(new Date(q.date), range),
       fullDate:  q.date,
       price:     +((q.close as number).toFixed(2)),
       macd:      m.macd,
