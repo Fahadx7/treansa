@@ -1,3 +1,12 @@
+*, *::before, *::after {
+  --bg-primary: #060d1f !important;
+  --bg-card: #112240 !important;
+}
+
+body, #root, .app {
+  background-color: #060d1f !important;
+}
+
 @import "tailwindcss";
 
 @theme {
@@ -26,8 +35,8 @@
 
 /* ─── Dark mode tokens (Bloomberg Terminal) ─── */
 .dark {
-  --bg:          #060b14;
-  --surface:     #0d1421;
+  --bg:          #0d1e3a;
+  --surface:     #0d1e3a;
   --border:      #1e2d40;
   --text:        #e8f0fe;
   --text-muted:  #637898;
@@ -100,9 +109,9 @@ input, select, textarea {
 .stat-card.accent-slate    { border-right: 3px solid #64748b; }
 
 /* Subtle gradient tint per accent in dark mode */
-.dark .stat-card.accent-positive { background: linear-gradient(145deg, #0d1421 0%, rgba(0,200,150,0.06) 100%); }
-.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #0d1421 0%, rgba(245,158,11,0.06) 100%); }
-.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #0d1421 0%, rgba(77,159,236,0.06) 100%); }
+.dark .stat-card.accent-positive { background: linear-gradient(145deg, #0d1e3a 0%, rgba(0,200,150,0.06) 100%); }
+.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #0d1e3a 0%, rgba(245,158,11,0.06) 100%); }
+.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #0d1e3a 0%, rgba(77,159,236,0.06) 100%); }
 
 /* ─── Glassmorphism badge ─── */
 .glass-badge {

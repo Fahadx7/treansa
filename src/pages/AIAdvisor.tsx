@@ -228,7 +228,7 @@ export default function AIAdvisor({ stocks = [] }: { stocks?: StockLike[] }) {
         {/* Chat header */}
         <div
           className="flex items-center gap-3 px-4 py-3 shrink-0"
-          style={{ background: 'linear-gradient(135deg,#0a0e1a,#0d1528)', borderBottom: '1px solid rgba(0,212,170,0.12)' }}
+          style={{ background: 'linear-gradient(135deg,#0d1e3a,#0d1528)', borderBottom: '1px solid rgba(0,212,170,0.12)' }}
         >
           <div
             className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0"
@@ -358,7 +358,7 @@ export default function AIAdvisor({ stocks = [] }: { stocks?: StockLike[] }) {
         >
           <div
             className="flex items-end gap-2 px-4 py-3 rounded-2xl"
-            style={{ background: '#0d1421', border: '1px solid rgba(99,179,237,0.15)', boxShadow: '0 0 20px rgba(0,0,0,0.3)' }}
+            style={{ background: '#0d1e3a', border: '1px solid rgba(99,179,237,0.15)', boxShadow: '0 0 20px rgba(0,0,0,0.3)' }}
           >
             <textarea
               ref={textareaRef}
@@ -381,7 +381,7 @@ export default function AIAdvisor({ stocks = [] }: { stocks?: StockLike[] }) {
               className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl transition-all disabled:opacity-30"
               style={{ background: input.trim() && !loading ? '#00d4aa' : 'rgba(0,212,170,0.2)' }}
             >
-              <Send className="w-4 h-4" style={{ color: input.trim() && !loading ? '#060b14' : '#00d4aa' }} />
+              <Send className="w-4 h-4" style={{ color: input.trim() && !loading ? '#0d1e3a' : '#00d4aa' }} />
             </button>
           </div>
           <p className="text-center text-[10px] mt-2" style={{ color: 'rgba(255,255,255,0.2)' }}>
@@ -530,7 +530,7 @@ export default function AIAdvisor({ stocks = [] }: { stocks?: StockLike[] }) {
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
                     style={{
                       background: saveStatus === 'saved' ? 'rgba(0,212,170,0.15)' : '#00d4aa',
-                      color: saveStatus === 'saved' ? '#00d4aa' : '#060b14',
+                      color: saveStatus === 'saved' ? '#00d4aa' : '#0d1e3a',
                       border: saveStatus === 'saved' ? '1px solid rgba(0,212,170,0.4)' : 'none',
                     }}
                   >

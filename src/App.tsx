@@ -1995,7 +1995,7 @@ function IndexTickerBar({ indices }: { indices: TickerIndex[] }) {
   return (
     <div
       className="sticky z-[90] safe-top overflow-hidden"
-      style={{ top: 0, background: '#1a1a2e', borderBottom: '1px solid rgba(255,255,255,0.06)', height: 40 }}
+      style={{ top: 0, background: '#0d1e3a', borderBottom: '1px solid rgba(255,255,255,0.06)', height: 40 }}
     >
       {/* Desktop: static row */}
       <div className="hidden md:flex items-center h-full max-w-7xl mx-auto px-4">
@@ -2036,7 +2036,7 @@ interface CommodityItem {
 function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: boolean }) {
   if (loading && items.length === 0) {
     return (
-      <div style={{ background: '#060b14', borderBottom: '1px solid rgba(255,255,255,0.05)', height: 52 }}
+      <div style={{ background: '#0d1e3a', borderBottom: '1px solid rgba(255,255,255,0.05)', height: 52 }}
         className="flex items-center px-4 gap-3">
         {[1, 2, 3].map(i => (
           <div key={i} className="animate-pulse h-8 w-28 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }} />
@@ -2045,7 +2045,7 @@ function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: b
     );
   }
   return (
-    <div style={{ background: '#060b14', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+    <div style={{ background: '#0d1e3a', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
       <div className="overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         <div className="flex items-center px-3 h-[52px] min-w-max md:min-w-0" style={{ gap: 0 }}>
           {items.map((item, idx) => {
@@ -2899,7 +2899,7 @@ function App() {
         className="sticky z-[80] safe-top"
         style={{
           top: 40,
-          background: '#0a0f1e',
+          background: '#0d1e3a',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           height: 60,
         }}
@@ -2976,7 +2976,7 @@ function App() {
                   {activeCount > 0 && (
                     <span
                       className="absolute flex items-center justify-center text-white font-bold"
-                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 14, height: 14, fontSize: 8, padding: '0 3px', top: -3, right: -3, border: '1.5px solid #0a0f1e' }}
+                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 14, height: 14, fontSize: 8, padding: '0 3px', top: -3, right: -3, border: '1.5px solid #0d1e3a' }}
                     >
                       {activeCount > 9 ? '9+' : activeCount}
                     </span>
