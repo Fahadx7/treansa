@@ -6,10 +6,23 @@
 
 import { SAUDI_STOCKS } from '../../src/symbols';
 
-/** Return Arabic name for a stock symbol, falling back to shortName then symbol. */
+const SHORT_NAME_AR: Record<string, string> = {
+  'Yanbu National Petrochemical Co': 'ينساب',
+  'Rabigh Refining and Petrochemical': 'بترورابغ',
+  'Advanced Petrochemical Co': 'البتروكيماويات المتقدمة',
+  'Saudi Aramco': 'أرامكو',
+  'Al Rajhi Bank': 'الراجحي',
+  'Saudi Basic Industries': 'سابك',
+  'stc': 'الاتصالات السعودية',
+  'Saudi National Bank': 'البنك الأهلي',
+  'Riyad Bank': 'بنك الرياض',
+  'Alinma Bank': 'مصرف الإنماء',
+};
+
+/** Return Arabic name — checks shortName map first, then symbol code map, then falls back. */
 function arabicName(symbol: string, shortName?: string): string {
   const code = symbol.replace('.SR', '');
-  return SAUDI_STOCKS[code] || shortName || symbol;
+  return (shortName && SHORT_NAME_AR[shortName]) || SAUDI_STOCKS[code] || shortName || symbol;
 }
 
 // ─── Yahoo Finance helpers ───────────────────────────────────────────────────
@@ -292,11 +305,11 @@ ${newsText || 'لا توجد أخبار'}
     const data: any = await res.json();
     const raw = (data?.content?.[0]?.text ?? '').trim();
     if (!raw) return 'تعذّر توليد التحليل.';
-    // Hard cap at 200 chars, cutting only at a sentence boundary
-    if (raw.length <= 200) return raw;
-    const cut = raw.slice(0, 200);
+    // Hard cap at 150 chars, cutting only at a sentence boundary
+    if (raw.length <= 150) return raw;
+    const cut = raw.slice(0, 150);
     const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('\u060C'), cut.lastIndexOf('!'), cut.lastIndexOf('\u061F'));
-    return lastDot > 80 ? cut.slice(0, lastDot + 1) : cut;
+    return lastDot > 60 ? cut.slice(0, lastDot + 1) : cut;
   } catch {
     return 'تعذّر توليد التحليل.';
   }

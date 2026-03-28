@@ -9,9 +9,22 @@
 import type { Handler } from "@netlify/functions";
 import { SAUDI_STOCKS } from "../../src/symbols";
 
+const SHORT_NAME_AR: Record<string, string> = {
+  'Yanbu National Petrochemical Co': 'ينساب',
+  'Rabigh Refining and Petrochemical': 'بترورابغ',
+  'Advanced Petrochemical Co': 'البتروكيماويات المتقدمة',
+  'Saudi Aramco': 'أرامكو',
+  'Al Rajhi Bank': 'الراجحي',
+  'Saudi Basic Industries': 'سابك',
+  'stc': 'الاتصالات السعودية',
+  'Saudi National Bank': 'البنك الأهلي',
+  'Riyad Bank': 'بنك الرياض',
+  'Alinma Bank': 'مصرف الإنماء',
+};
+
 function arabicName(symbol: string, shortName?: string): string {
   const code = symbol.replace(".SR", "");
-  return SAUDI_STOCKS[code] || shortName || symbol;
+  return (shortName && SHORT_NAME_AR[shortName]) || SAUDI_STOCKS[code] || shortName || symbol;
 }
 
 const YF_UA =
@@ -165,14 +178,19 @@ async function claudeForecast(context: string): Promise<string> {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 180,
+        max_tokens: 120,
         messages: [{ role: "user", content: context }],
       }),
       timeoutMs: 20000,
     });
     if (!res.ok) return "(فشل Claude)";
     const d: any = await res.json();
-    return (d?.content?.[0]?.text ?? "").trim() || "(لا رد)";
+    const raw = (d?.content?.[0]?.text ?? "").trim();
+    if (!raw) return "(لا رد)";
+    if (raw.length <= 150) return raw;
+    const cut = raw.slice(0, 150);
+    const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('\u060C'), cut.lastIndexOf('!'), cut.lastIndexOf('\u061F'));
+    return lastDot > 60 ? cut.slice(0, lastDot + 1) : cut;
   } catch {
     return "(انتهت مهلة Claude)";
   }
