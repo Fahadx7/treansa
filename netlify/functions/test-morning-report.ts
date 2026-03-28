@@ -165,6 +165,36 @@ async function fetchNews(): Promise<string[]> {
   }
 }
 
+async function translateHeadline(title: string, apiKey: string): Promise<string> {
+  try {
+    const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 80,
+        messages: [{ role: "user", content: `ترجم هذا العنوان للعربية في جملة واحدة فقط: ${title}` }],
+      }),
+      timeoutMs: 10000,
+    });
+    if (!res.ok) return title;
+    const d: any = await res.json();
+    return (d?.content?.[0]?.text ?? "").trim() || title;
+  } catch {
+    return title;
+  }
+}
+
+async function translateHeadlines(titles: string[]): Promise<string[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return titles;
+  return Promise.all(titles.map((t) => translateHeadline(t, apiKey)));
+}
+
 async function claudeForecast(context: string): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return "(مفتاح Claude غير مضبوط)";
@@ -240,6 +270,11 @@ export const handler: Handler = async (event) => {
   const news = await fetchNews();
   steps.push(`✅ أخبار: ${news.length} خبر`);
 
+  // 5b. Translate headlines to Arabic
+  steps.push("جاري ترجمة الأخبار...");
+  const translatedNews = await translateHeadlines(news.slice(0, 3));
+  steps.push(`✅ ترجمة: ${translatedNews.length} عنوان`);
+
   // 6. Claude
   steps.push("جاري توليد التحليل بـ Claude...");
   const prompt = `أنت محلل مالي. اكتب توقعاً مختصراً لجلسة السوق السعودي اليوم في جملتين فقط بالعربية. البيانات: تاسي ${tasi?.price.toFixed(2) ?? "غير متاح"}، أبرز الصاعدين: ${gainers.map((g: any) => arabicName(g.symbol, g.shortName)).join("، ")}.`;
@@ -256,7 +291,7 @@ export const handler: Handler = async (event) => {
     `• ${arabicName(s.symbol, s.shortName)}: +${s.regularMarketChangePercent.toFixed(2)}%`
   ).join("\n") || "• لا بيانات";
 
-  const newsBlock = news.slice(0, 3).map((n) => `• ${n}`).join("\n") || "• لا أخبار";
+  const newsBlock = translatedNews.map((n) => `• ${n}`).join("\n") || "• لا أخبار";
 
   const fmtChg = (v: number | null) => v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "—";
   const commoditiesBlock = comm.brent != null || comm.gold != null

@@ -241,6 +241,38 @@ async function fetchEconomicNews(): Promise<RssItem[]> {
 
 // ─── Claude AI ───────────────────────────────────────────────────────────────
 
+/** Translate a single headline to Arabic using Claude. Falls back to original on error. */
+async function translateHeadline(title: string, apiKey: string): Promise<string> {
+  try {
+    const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 80,
+        messages: [{ role: 'user', content: `ترجم هذا العنوان للعربية في جملة واحدة فقط: ${title}` }],
+      }),
+      timeoutMs: 10000,
+    });
+    if (!res.ok) return title;
+    const data: any = await res.json();
+    return (data?.content?.[0]?.text ?? '').trim() || title;
+  } catch {
+    return title;
+  }
+}
+
+/** Translate all headlines in parallel. Returns original titles if API key missing. */
+async function translateHeadlines(titles: string[]): Promise<string[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return titles;
+  return Promise.all(titles.map((t) => translateHeadline(t, apiKey)));
+}
+
 async function claudeBriefing(opts: {
   tasiPrice: number | null;
   tasiChangePercent: number | null;
@@ -423,8 +455,9 @@ export default async function handler(): Promise<Response> {
   const gainersCount = allQuotes.filter((q) => q.regularMarketChangePercent > 0).length;
   const losersCount = allQuotes.filter((q) => q.regularMarketChangePercent < 0).length;
 
-  // 5. Fetch news
+  // 5. Fetch news and translate headlines to Arabic
   const newsItems = await fetchEconomicNews();
+  const translatedTitles = await translateHeadlines(newsItems.slice(0, 3).map((n) => n.title));
 
   // 6. Claude briefing
   const forecast = await claudeBriefing({
@@ -450,10 +483,7 @@ export default async function handler(): Promise<Response> {
     .map((s) => `• ${arabicName(s.symbol, s.shortName)}: ${s.regularMarketChangePercent.toFixed(2)}%`)
     .join('\n');
 
-  const newsBlock = newsItems
-    .slice(0, 3)
-    .map((n) => `• ${n.title}`)
-    .join('\n');
+  const newsBlock = translatedTitles.map((t) => `• ${t}`).join('\n');
 
   const brent = commodities.find((c) => c.symbol === 'BZ=F');
   const gold = commodities.find((c) => c.symbol === 'GC=F');
