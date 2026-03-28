@@ -3409,117 +3409,102 @@ function App() {
             </div>
             
             <div className="bg-app-surface border border-app-border rounded-2xl overflow-hidden flex-1 min-h-[500px] flex flex-col shadow-sm dark:shadow-none">
-              {activeTab === 'margin' ? (
-                <MarginTrading 
-                  user={user}
-                  marginAccount={marginAccount}
-                  marginPositions={marginPositions}
-                  tickerData={status?.tickerData || []}
-                  onClosePosition={closeMarginPosition}
-                />
-              ) : (
-                <>
-                  <div className="flex items-center border-b border-app-border bg-app-surface/50 px-6 h-12">
-                <div className="flex-[1.5] text-xs font-medium text-app-text-muted uppercase">الشركة</div>
-                <div className="flex-1 text-xs font-medium text-app-text-muted uppercase">السعر</div>
-                <div className="flex-1 text-xs font-medium text-app-text-muted uppercase">RSI</div>
-                <div className="flex-[1.5] text-xs font-medium text-app-text-muted uppercase">تحليل الموجات</div>
-                <div className="flex-1 text-xs font-medium text-app-text-muted uppercase text-left">التغيير</div>
-              </div>
-              <div className="flex-1">
-                <AutoSizerAny>
-                  {({ height, width }: any) => {
-                    let dataToDisplay: any[] = activeTab === 'active' 
-                      ? (status?.activeTrades || []) 
-                      : activeTab === 'watchlist'
-                        ? (status?.tickerData.filter(s => watchlist.includes(s.symbol)) || [])
-                        : (status?.tickerData || []);
-                    
-                    if (searchQuery) {
-                      const query = searchQuery.toLowerCase();
-                      dataToDisplay = dataToDisplay.filter((item: any) => 
-                        item.symbol.toLowerCase().includes(query) || 
-                        item.companyName.toLowerCase().includes(query)
+              <>
+                <div className="flex items-center border-b border-app-border bg-app-surface/50 px-6 h-12">
+                  <div className="flex-[1.5] text-xs font-medium text-app-text-muted uppercase">الشركة</div>
+                  <div className="flex-1 text-xs font-medium text-app-text-muted uppercase">السعر</div>
+                  <div className="flex-1 text-xs font-medium text-app-text-muted uppercase">RSI</div>
+                  <div className="flex-[1.5] text-xs font-medium text-app-text-muted uppercase">تحليل الموجات</div>
+                  <div className="flex-1 text-xs font-medium text-app-text-muted uppercase text-left">التغيير</div>
+                </div>
+                <div className="flex-1 relative">
+                  <AutoSizerAny>
+                    {({ height, width }: any) => {
+                      const allStocks = status?.tickerData ?? [];
+
+                      let dataToDisplay: StockStats[] =
+                        activeTab === 'active'
+                          ? allStocks.filter(s => s.rsi < 35 || s.rsi > 65)
+                          : activeTab === 'watchlist'
+                          ? allStocks.filter(s => watchlist.includes(s.symbol))
+                          : activeTab === 'margin'
+                          ? allStocks.filter(s => s.volumeRatio >= 2)
+                          : allStocks; // 'all'
+
+                      if (searchQuery) {
+                        const q = searchQuery.toLowerCase();
+                        dataToDisplay = dataToDisplay.filter(s =>
+                          s.symbol.toLowerCase().includes(q) ||
+                          s.companyName.toLowerCase().includes(q)
+                        );
+                      }
+
+                      if (dataToDisplay.length === 0) {
+                        const emptyMsg =
+                          activeTab === 'active'   ? 'لا توجد أسهم بإشارات شراء/بيع نشطة الآن' :
+                          activeTab === 'watchlist' ? 'قائمتك فارغة — أضف أسهماً من تفاصيل السهم' :
+                          activeTab === 'margin'    ? 'لا توجد أسهم بحجم تداول مرتفع الآن' :
+                          allStocks.length === 0    ? 'جاري تحميل بيانات السوق...' : 'لا توجد نتائج';
+                        return (
+                          <div className="flex flex-col items-center justify-center text-app-text-muted text-sm gap-2" style={{ height }}>
+                            {activeTab === 'watchlist' && <Star className="w-8 h-8 opacity-20" />}
+                            <span className="italic opacity-60">{emptyMsg}</span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <List
+                          height={height}
+                          itemCount={dataToDisplay.length}
+                          itemSize={60}
+                          width={width}
+                          direction="rtl"
+                          className="custom-scrollbar"
+                        >
+                          {({ index, style }: any) => {
+                            const s = dataToDisplay[index];
+                            if (!s) return null;
+                            const rsi = s.rsi ?? 50;
+                            const rsiColor =
+                              rsi > 70 ? '#ef4444' :
+                              rsi < 30 ? '#10b981' :
+                              'var(--text-muted)';
+                            return (
+                              <div
+                                style={style}
+                                className="flex items-center border-b border-app-border hover:bg-app-bg transition-colors px-6 cursor-pointer"
+                                onClick={() => setSelectedStock(s)}
+                              >
+                                <div className="flex-[1.5]">
+                                  <div className="font-bold text-app-text text-sm">{s.companyName}</div>
+                                  <div className="text-[10px] text-app-text-muted font-mono">{s.symbol}</div>
+                                </div>
+                                <div className="flex-1 font-mono text-sm text-app-text">{s.price.toFixed(2)}</div>
+                                <div className="flex-1 font-mono text-sm font-bold" style={{ color: rsiColor }}>
+                                  {rsi.toFixed(1)}
+                                </div>
+                                <div className="flex-[1.5] text-xs font-medium">
+                                  {s.wave && s.wave !== 'غير محدد' ? (
+                                    <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded border border-amber-500/20">
+                                      {s.wave}
+                                    </span>
+                                  ) : (
+                                    <span className="text-app-text-muted opacity-40">---</span>
+                                  )}
+                                </div>
+                                <div className={`flex-1 text-sm font-bold text-left ${s.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                  {s.change >= 0 ? '+' : ''}{s.change.toFixed(2)}%
+                                </div>
+                              </div>
+                            );
+                          }}
+                        </List>
                       );
-                    }
-                    
-                    return (
-                      <List
-                        height={height}
-                        itemCount={dataToDisplay.length}
-                        itemSize={60}
-                        width={width}
-                        direction="rtl"
-                        className="custom-scrollbar"
-                      >
-                        {({ index, style }: any) => {
-                          const item = dataToDisplay[index];
-                          if (!item) return null;
-                          
-                          // Handle both Trade and StockStats types
-                          const symbol = (item as any).symbol;
-                          const companyName = (item as any).companyName;
-                          const price = (item as any).entryPrice || (item as any).price;
-                          const rsi = (item as any).rsi;
-                          const wave = (item as any).wave;
-                          const change = (item as any).change;
-                          const fullStock = status?.tickerData.find(s => s.symbol === symbol);
- 
-                           return (
-                             <div 
-                               style={style} 
-                               className="flex items-center border-b border-app-border hover:bg-app-bg transition-colors px-6 cursor-pointer"
-                               onClick={() => fullStock && setSelectedStock(fullStock)}
-                             >
-                               <div className="flex-[1.5]">
-                                 <div className="font-bold text-emerald-500">{companyName}</div>
-                                 <div className="text-[10px] text-app-text-muted font-mono">{symbol}</div>
-                               </div>
-                               <div className="flex-1 font-mono">{price.toFixed(2)}</div>
-                               <div className="flex-1 font-mono">{rsi.toFixed(1)}</div>
-                               <div className="flex-[1.5] text-xs font-medium">
-                                 {wave && wave !== "غير محدد" ? (
-                                   <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded border border-amber-500/20">
-                                     {wave}
-                                   </span>
-                                 ) : (
-                                   <span className="text-app-text-muted italic opacity-50">---</span>
-                                 )}
-                               </div>
-                               <div className={`flex-1 text-sm font-bold text-left ${change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                 {change !== undefined ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '---'}
-                               </div>
-                             </div>
-                           );
-                         }}
-                       </List>
-                     );
-                   }}
-                 </AutoSizerAny>
-                 {activeTab === 'active' && status?.activeTrades.length === 0 && (
-                   <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic">
-                     لا توجد صفقات نشطة حالياً
-                   </div>
-                 )}
-                 {activeTab === 'watchlist' && watchlist.length === 0 && (
-                   <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic flex-col gap-2">
-                     <Star className="w-8 h-8 opacity-20" />
-                     قائمتك فارغة. أضف أسهمك المفضلة لمتابعتها هنا.
-                   </div>
-                 )}
-                 {activeTab === 'all' && status?.tickerData.length === 0 && (
-                   <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic">
-                     جاري تحميل بيانات السوق...
-                   </div>
-                 )}
-                 {searchQuery && (status?.tickerData.length || 0) > 0 && (
-                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-app-surface/80 backdrop-blur-sm border border-app-border rounded-full text-[10px] text-app-text-muted">
-                     تم العثور على نتائج البحث
-                   </div>
-                 )}
-               </div>
+                    }}
+                  </AutoSizerAny>
+                </div>
               </>
-              )}
              </div>
            </div>
  
