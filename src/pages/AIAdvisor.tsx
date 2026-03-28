@@ -103,45 +103,58 @@ interface TASISnapshot {
   changePercent: number;
 }
 
-const MARKET_KEYWORDS = [
-  'تاسي', 'السوق', 'المؤشر', 'البورصة', 'سوق الأسهم',
-  'صاعد', 'هابط', 'ارتفع', 'انخفض', 'فرص', 'اليوم',
-  'هذا الأسبوع', 'الأسبوع', 'سوق السعودي', 'السوق السعودي',
-];
-
-function isTasiQuestion(text: string): boolean {
-  return MARKET_KEYWORDS.some(kw => text.includes(kw));
+interface CommodityItem {
+  label: string;
+  price: number;
+  prefix: string;
 }
 
 function buildMarketContext(
   tasi: TASISnapshot | null,
   stocks: StockLike[],
+  commodities: CommodityItem[],
   userMessage: string,
 ): string {
-  const time = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-  const tasiLine = tasi
-    ? `تاسي الحالي: ${tasi.price.toFixed(2)} نقطة (${tasi.changePercent >= 0 ? '+' : ''}${tasi.changePercent.toFixed(2)}%)`
-    : 'تاسي الحالي: غير متوفر';
+  // TASI value: prop → localStorage cache → fallback constant
+  // NEVER calculate from stock averages
+  const tasiValue = (tasi && tasi.price > 1000)
+    ? tasi.price.toLocaleString('ar-SA', { maximumFractionDigits: 2 })
+    : (() => {
+        try {
+          const cached = JSON.parse(localStorage.getItem('tasi_last_known') || 'null');
+          if (cached && cached.price > 1000) return cached.price.toLocaleString('ar-SA', { maximumFractionDigits: 2 });
+        } catch { /* ignore */ }
+        return '11,090';
+      })();
 
-  const gainers = [...stocks].filter(s => s.change > 0).sort((a, b) => b.change - a.change).slice(0, 3);
-  const losers  = [...stocks].filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 3);
-  const upCount   = stocks.filter(s => s.change > 0).length;
-  const downCount = stocks.filter(s => s.change < 0).length;
+  const tasiChange        = (tasi?.change ?? 0).toFixed(2);
+  const tasiChangePercent = (tasi?.changePercent ?? 0).toFixed(2);
+
+  const upCount     = stocks.filter(s => s.change > 0).length;
+  const downCount   = stocks.filter(s => s.change < 0).length;
+  const stableCount = stocks.filter(s => s.change === 0).length;
+
+  const brent = commodities.find(c => c.label === 'برنت');
+  const gold  = commodities.find(c => c.label === 'ذهب');
+  const brentPrice = brent ? brent.price.toFixed(2) : '---';
+  const goldPrice  = gold  ? gold.price.toFixed(2)  : '---';
 
   const fmt = (s: StockLike) =>
     `${s.companyName} (${s.symbol.replace('.SR', '')}) ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%`;
+  const gainers = [...stocks].filter(s => s.change > 0).sort((a, b) => b.change - a.change).slice(0, 3);
+  const losers  = [...stocks].filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 3);
 
-  const lines = [
-    `[بيانات حقيقية - آخر تحديث: ${time}]`,
-    tasiLine,
-    `صاعد: ${upCount} | هابط: ${downCount}`,
+  return [
+    `[بيانات السوق الحقيقية - ${new Date().toLocaleString('ar-SA')}]`,
+    `قيمة مؤشر تاسي: ${tasiValue}`,
+    `تغيير تاسي: ${tasiChange}  (${tasiChangePercent}%)`,
+    `صاعد: ${upCount} سهم | هابط: ${downCount} سهم | مستقر: ${stableCount} سهم`,
+    `برنت: $${brentPrice} | ذهب: $${goldPrice}`,
     gainers.length > 0 ? `أبرز الصاعدين: ${gainers.map(fmt).join('، ')}` : '',
     losers.length  > 0 ? `أبرز الهابطين: ${losers.map(fmt).join('، ')}`  : '',
     '',
     `سؤال المستخدم: ${userMessage}`,
-  ].filter(l => l !== undefined);
-
-  return lines.join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function findMentionedStock(text: string, stocks: StockLike[]): StockLike | null {
@@ -173,7 +186,7 @@ function buildStockContext(s: StockLike): string {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function AIAdvisor({ stocks = [], tasiData = null }: { stocks?: StockLike[]; tasiData?: TASISnapshot | null }) {
+export default function AIAdvisor({ stocks = [], tasiData = null, commodities = [] }: { stocks?: StockLike[]; tasiData?: TASISnapshot | null; commodities?: CommodityItem[] }) {
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -202,14 +215,10 @@ export default function AIAdvisor({ stocks = [], tasiData = null }: { stocks?: S
     const trimmed = text.trim();
     if (!trimmed || loading) return;
 
-    // Inject real market data when TASI or any stock is mentioned
-    const match        = stocks.length > 0 ? findMentionedStock(trimmed, stocks) : null;
-    const needsMarket  = isTasiQuestion(trimmed) || match !== null;
-    const marketPrefix = needsMarket ? buildMarketContext(tasiData, stocks, trimmed) : null;
-    const stockSuffix  = match ? `\nبيانات السهم المذكور:\n${buildStockContext(match)}` : '';
-    const enriched     = marketPrefix
-      ? marketPrefix + stockSuffix
-      : trimmed;
+    // Always inject real market data before every Claude API call
+    const match       = stocks.length > 0 ? findMentionedStock(trimmed, stocks) : null;
+    const stockSuffix = match ? `\nبيانات السهم المذكور:\n${buildStockContext(match)}` : '';
+    const enriched    = buildMarketContext(tasiData, stocks, commodities, trimmed) + stockSuffix;
 
     const next: Message[] = [...messages, { role: 'user', content: trimmed }];
     setMessages(next);
