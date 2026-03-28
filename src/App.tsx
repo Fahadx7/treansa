@@ -1967,33 +1967,52 @@ interface CommodityItem {
 function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: boolean }) {
   if (loading && items.length === 0) {
     return (
-      <div className="h-8 flex items-center px-4" style={{ background: 'rgba(6,11,20,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <div className="animate-pulse h-3 w-48 rounded" style={{ background: 'rgba(255,255,255,0.06)' }} />
+      <div style={{ background: '#060b14', borderBottom: '1px solid rgba(255,255,255,0.05)', height: 52 }}
+        className="flex items-center px-4 gap-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="animate-pulse h-8 w-28 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }} />
+        ))}
       </div>
     );
   }
   return (
-    <div
-      className="overflow-x-auto"
-      style={{ background: 'rgba(6,11,20,0.92)', borderBottom: '1px solid rgba(255,255,255,0.06)', height: 32 }}
-    >
-      <div className="flex items-center gap-5 px-4 h-full whitespace-nowrap" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-        {items.map((item) => {
-          const up = item.changePercent >= 0;
-          const color = up ? '#00c896' : '#ff3d5a';
-          return (
-            <span key={item.label} className="flex items-center gap-1.5 text-[11px]">
-              <span>{item.icon}</span>
-              <span style={{ color: 'rgba(255,255,255,0.55)' }}>{item.label}:</span>
-              <span className="font-bold" style={{ color: 'white' }}>
-                {item.prefix}{item.price.toLocaleString('en-US', { minimumFractionDigits: item.prefix === '' ? 4 : 2, maximumFractionDigits: item.prefix === '' ? 4 : 2 })}
-              </span>
-              <span className="font-semibold" style={{ color, fontSize: 10 }}>
-                {up ? '▲' : '▼'}{Math.abs(item.changePercent).toFixed(2)}%
-              </span>
-            </span>
-          );
-        })}
+    <div style={{ background: '#060b14', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex items-center px-3 h-[52px] min-w-max md:min-w-0" style={{ gap: 0 }}>
+          {items.map((item, idx) => {
+            const up = item.changePercent >= 0;
+            const accent = up ? '#00c896' : '#ff3d5a';
+            const cardBg = up ? 'rgba(0,200,150,0.07)' : 'rgba(255,61,90,0.07)';
+            const cardBorder = up ? 'rgba(0,200,150,0.18)' : 'rgba(255,61,90,0.16)';
+            const cardGlow = up ? '0 0 14px rgba(0,200,150,0.1)' : '0 0 14px rgba(255,61,90,0.08)';
+            const changeBg = up ? 'rgba(0,200,150,0.12)' : 'rgba(255,61,90,0.1)';
+            return (
+              <React.Fragment key={item.label}>
+                {idx > 0 && (
+                  <div style={{ width: 1, height: 26, background: 'rgba(255,255,255,0.07)', margin: '0 10px', flexShrink: 0 }} />
+                )}
+                <div
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
+                  style={{ background: cardBg, border: `1px solid ${cardBorder}`, boxShadow: cardGlow }}
+                >
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>{item.icon}</span>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 500, letterSpacing: '0.01em' }}>
+                    {item.label}
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'white', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.01em' }}>
+                    {item.prefix}{item.price.toLocaleString('en-US', {
+                      minimumFractionDigits: item.prefix === '' ? 4 : 2,
+                      maximumFractionDigits: item.prefix === '' ? 4 : 2,
+                    })}
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: accent, fontFamily: "'JetBrains Mono', monospace", background: changeBg, padding: '2px 5px', borderRadius: 4 }}>
+                    {up ? '▲' : '▼'} {Math.abs(item.changePercent).toFixed(2)}%
+                  </span>
+                </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -2766,29 +2785,28 @@ function App() {
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header
-        className="header-premium sticky top-0 z-[80] safe-top overflow-hidden"
+        className="sticky top-0 z-[80] safe-top"
         style={{
-          background: 'linear-gradient(135deg, #0a0e1a 0%, #0d1528 50%, #0a1628 100%)',
-          borderBottom: '1px solid rgba(99,179,237,0.15)',
-          boxShadow: '0 1px 30px rgba(0,0,0,0.5)',
-          height: 68,
+          background: '#0a0f1e',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+          height: 60,
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between gap-3 relative z-10">
+        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between gap-3">
 
-          {/* ── Logo (right in RTL) ── */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* ── Logo ── */}
+          <div className="flex items-center gap-2.5 shrink-0">
             <div
               className="logo-pulse flex items-center justify-center shrink-0"
-              style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(0,212,170,0.15)', border: '1px solid rgba(0,212,170,0.3)' }}
+              style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(0,212,170,0.12)', border: '1px solid rgba(0,212,170,0.25)' }}
             >
-              <BarChart3 className="w-5 h-5" style={{ color: '#00d4aa' }} />
+              <BarChart3 className="w-4 h-4" style={{ color: '#00d4aa' }} />
             </div>
             <div>
-              <div className="font-extrabold text-white leading-tight" style={{ fontSize: 18, letterSpacing: '-0.02em', fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
-                trandsa <span style={{ color: 'rgba(255,255,255,0.85)' }}>ترندسا</span>
+              <div className="font-extrabold text-white leading-tight" style={{ fontSize: 17, letterSpacing: '-0.02em', fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
+                trandsa <span style={{ color: 'rgba(255,255,255,0.8)' }}>ترندسا</span>
               </div>
-              <div style={{ fontSize: 11, color: '#4a9eff', letterSpacing: '0.04em', fontWeight: 500 }}>
+              <div style={{ fontSize: 10, color: 'rgba(74,158,255,0.8)', letterSpacing: '0.04em', fontWeight: 500 }}>
                 منصة التداول الذكية
               </div>
             </div>
@@ -2797,38 +2815,42 @@ function App() {
           {/* ── Spacer ── */}
           <div className="flex-1" />
 
-          {/* ── Status badges (desktop) ── */}
-          <div className="hidden md:flex items-center gap-2.5">
-            {/* Delay badge with pulsing dot */}
+          {/* ── Status badge (desktop only) ── */}
+          <div className="hidden md:flex items-center gap-2">
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold"
-              style={{ background: 'rgba(244,162,97,0.15)', border: '1px solid rgba(244,162,97,0.3)', color: '#f4a261' }}
+              className="flex items-center gap-1.5 px-3 rounded-full text-[11px] font-semibold"
+              style={{ height: 28, background: 'rgba(244,162,97,0.1)', border: '1px solid rgba(244,162,97,0.25)', color: '#f4a261' }}
             >
               <span className="pulse-dot w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#f4a261', display: 'inline-block' }} />
               بيانات مؤخرة ~15 دقيقة
             </div>
 
-            {/* Refresh button */}
             <button
               onClick={startScan}
               disabled={isLoadingData}
               title="تحديث البيانات"
               className="btn-icon disabled:opacity-40"
+              style={{ width: 34, height: 34, borderRadius: 8 }}
             >
-              <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.6)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
+              <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
             </button>
 
-            {/* Theme toggle */}
-            <button onClick={toggleTheme} title={isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'} className="btn-icon">
+            <button
+              onClick={toggleTheme}
+              title={isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
+              className="btn-icon"
+              style={{ width: 34, height: 34, borderRadius: 8 }}
+            >
               {isDarkMode
-                ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />
-                : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />}
+                ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />
+                : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />}
             </button>
           </div>
 
-          {/* ── Action buttons (left in RTL) ── */}
-          <div className="flex items-center gap-2 mr-2">
-            {/* Bell with red dot */}
+          {/* ── Action buttons ── */}
+          <div className="flex items-center gap-1.5 ml-2">
+
+            {/* Bell */}
             {(() => {
               const activeCount = (JSON.parse(localStorage.getItem('saudi_stock_alerts') || '[]') as CustomAlert[]).filter(a => !a.triggered).length;
               return (
@@ -2836,12 +2858,13 @@ function App() {
                   onClick={() => setShowAlertsModal(true)}
                   title="تنبيهاتي"
                   className="btn-icon relative"
+                  style={{ width: 34, height: 34, borderRadius: 8 }}
                 >
-                  <Bell className="w-4 h-4" style={{ color: activeCount > 0 ? '#f87171' : 'rgba(255,255,255,0.6)' }} />
+                  <Bell className="w-4 h-4" style={{ color: activeCount > 0 ? '#f87171' : 'rgba(255,255,255,0.5)' }} />
                   {activeCount > 0 && (
                     <span
                       className="absolute flex items-center justify-center text-white font-bold"
-                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 15, height: 15, fontSize: 8, padding: '0 3px', top: -4, right: -4, border: '1.5px solid #0d1528' }}
+                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 14, height: 14, fontSize: 8, padding: '0 3px', top: -3, right: -3, border: '1.5px solid #0a0f1e' }}
                     >
                       {activeCount > 9 ? '9+' : activeCount}
                     </span>
@@ -2850,33 +2873,42 @@ function App() {
               );
             })()}
 
-            {/* Telegram button */}
+            {/* Telegram — pill shape with glow */}
             <a
               href="https://t.me/RadarsaudiiBot"
               target="_blank"
               rel="noreferrer"
-              className="btn-telegram flex items-center gap-2 font-bold whitespace-nowrap text-white"
-              style={{ height: 36, padding: '0 16px', borderRadius: 10, fontSize: 13 }}
+              className="flex items-center gap-1.5 font-bold whitespace-nowrap text-white"
+              style={{
+                height: 34,
+                padding: '0 14px',
+                borderRadius: 999,
+                fontSize: 12,
+                background: 'linear-gradient(135deg, #1a6fda, #1558c0)',
+                border: '1px solid rgba(74,158,255,0.35)',
+                boxShadow: '0 0 16px rgba(37,130,255,0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
+                transition: 'box-shadow 0.2s ease',
+              }}
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-3 h-3" />
               <span className="hidden sm:inline">قناة التليجرام</span>
             </a>
 
-            {/* Login / Avatar */}
+            {/* User / Avatar */}
             {user ? (
               <button
                 onClick={() => logout()}
-                className="flex items-center justify-center rounded-full overflow-hidden transition-opacity hover:opacity-75 shrink-0"
-                style={{ width: 36, height: 36, border: '2px solid rgba(0,212,170,0.5)', boxShadow: '0 0 8px rgba(0,212,170,0.2)' }}
-                title="تسجيل الخروج"
+                className="flex items-center justify-center transition-opacity hover:opacity-75 shrink-0"
+                style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(0,212,170,0.1)', border: '1px solid rgba(0,212,170,0.25)' }}
+                title={`${user.displayName || ''} — تسجيل الخروج`}
               >
-                <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <User className="w-4 h-4" style={{ color: '#00d4aa' }} />
               </button>
             ) : (
               <button
                 onClick={() => loginWithGoogle()}
-                className="flex items-center gap-2 font-bold"
-                style={{ height: 36, padding: '0 14px', borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.85)', fontSize: 13, transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)' }}
+                className="flex items-center gap-1.5 font-bold"
+                style={{ height: 34, padding: '0 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', fontSize: 12, transition: 'all 0.2s ease' }}
               >
                 <User className="w-4 h-4" />
                 <span className="hidden sm:inline">دخول</span>
@@ -2884,14 +2916,23 @@ function App() {
             )}
 
             {/* Mobile: refresh + theme */}
-            <div className="flex md:hidden items-center gap-1.5">
-              <button onClick={startScan} disabled={isLoadingData} className="btn-icon disabled:opacity-40">
-                <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.6)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
+            <div className="flex md:hidden items-center gap-1">
+              <button
+                onClick={startScan}
+                disabled={isLoadingData}
+                className="btn-icon disabled:opacity-40"
+                style={{ width: 34, height: 34, borderRadius: 8 }}
+              >
+                <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
               </button>
-              <button onClick={toggleTheme} className="btn-icon">
+              <button
+                onClick={toggleTheme}
+                className="btn-icon"
+                style={{ width: 34, height: 34, borderRadius: 8 }}
+              >
                 {isDarkMode
-                  ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />
-                  : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.6)' }} />}
+                  ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />
+                  : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />}
               </button>
             </div>
           </div>
@@ -2901,7 +2942,7 @@ function App() {
 
       {/* ── Page Navigation Bar ─────────────────────────────────────────── */}
       <nav
-        className="sticky top-[68px] z-[70]"
+        className="sticky top-[60px] z-[70]"
         style={{ background: 'rgba(6,11,20,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(99,179,237,0.1)' }}
       >
         <div className="max-w-7xl mx-auto px-4">
@@ -3055,13 +3096,13 @@ function App() {
                   {/* Big price number */}
                   <div className="mb-1">
                     {hasPrice ? (
-                      <div style={{ fontSize: 36, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
+                      <div style={{ fontSize: 40, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
                         {displayPrice.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     ) : isLoadingData ? (
                       <div className="animate-pulse h-10 w-48 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)' }} />
                     ) : (
-                      <div style={{ fontSize: 36, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.25)', lineHeight: 1 }}>—</div>
+                      <div style={{ fontSize: 40, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.25)', lineHeight: 1 }}>—</div>
                     )}
                   </div>
 
