@@ -648,7 +648,7 @@ app.get("/api/chart/:symbol", async (req, res) => {
         return res.status(400).json({ success: false, error: 'رمز غير صالح' });
 
     const RANGES: Record<string, { interval: string; days: number }> = {
-        '1d':  { interval: '5m',  days: 1    },
+        '1d':  { interval: '5m',  days: 5    }, // 5-day window so weekends return last session
         '1w':  { interval: '15m', days: 7    },
         '1mo': { interval: '1h',  days: 30   },
         '6mo': { interval: '1d',  days: 180  },
@@ -659,7 +659,15 @@ app.get("/api/chart/:symbol", async (req, res) => {
 
     try {
         const period1 = Math.floor(Date.now() / 1000) - cfg.days * 24 * 60 * 60;
-        const { meta, quotes } = await yfChart(symbol, cfg.interval, period1);
+        let { meta, quotes } = await yfChart(symbol, cfg.interval, period1);
+
+        // For 1d view: keep only the most recent trading day's candles
+        if (range === '1d' && quotes.length > 0) {
+            const lastDate = new Date((quotes[quotes.length - 1].date as Date));
+            const lastDay  = lastDate.toDateString();
+            quotes = quotes.filter(q => new Date(q.date as Date).toDateString() === lastDay);
+        }
+
         const serialized = quotes.map(q => ({ ...q, date: (q.date as Date).toISOString() }));
         res.json({ success: true, meta, quotes: serialized });
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }

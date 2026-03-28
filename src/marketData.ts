@@ -480,30 +480,38 @@ export async function enrichStocksWithChartData(
   }
 }
 
+const DAY_NAMES = ['أحد', 'اثن', 'ثلث', 'أرب', 'خمس', 'جمع', 'سبت'];
+
 function formatChartTime(date: Date, range: ChartRange): string {
-  if (range === '1d' || range === '1w') {
-    return date.toLocaleTimeString('en-SA', { hour: '2-digit', minute: '2-digit', hour12: false });
-  }
+  const hhmm = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (range === '1d') return hhmm;
+  if (range === '1w') return `${DAY_NAMES[date.getDay()]} ${hhmm}`;
   if (range === '1mo' || range === '6mo') {
-    return date.toLocaleDateString('en-SA', { day: '2-digit', month: '2-digit' });
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
   }
   // 1y, 5y
-  return date.toLocaleDateString('en-SA', { month: 'short', year: '2-digit' });
+  return date.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
 }
 
 export function buildHistoryFromChart(meta: any, quotes: any[], range: ChartRange = '1mo'): any[] {
-  // For short ranges keep indicators (need at least 26 bars for MACD)
-  // For all ranges use all available quotes (no 50-bar cap)
-  const allCloses = quotes.map((q: any) => q.close as number);
+  // Filter out any candle with a null/undefined/NaN/zero close — avoids chart dropping to zero
+  const valid = quotes
+    .filter((q: any) => {
+      const c = q.close;
+      return c !== null && c !== undefined && !isNaN(c) && c > 0;
+    })
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  return quotes.map((q: any, i: number) => {
+  const allCloses = valid.map((q: any) => q.close as number);
+
+  return valid.map((q: any, i: number) => {
     const subCloses = allCloses.slice(0, i + 1);
     const m = calcMACD(subCloses);
     const b = calcBB(subCloses);
     return {
       time:      formatChartTime(new Date(q.date), range),
       fullDate:  q.date,
-      price:     +((q.close as number).toFixed(2)),
+      price:     +(q.close as number).toFixed(2),
       macd:      m.macd,
       signal:    m.signal,
       histogram: m.histogram,

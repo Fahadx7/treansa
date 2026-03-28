@@ -3144,9 +3144,11 @@ function App() {
             const gainers  = tickers.filter(s => s.change > 0).length;
             const losers   = tickers.filter(s => s.change < 0).length;
             const unchanged = tickers.length - gainers - losers;
-            const price    = tasiData?.price ?? 0;
-            const chg      = tasiData?.change ?? 0;
-            const chgPct   = tasiData?.changePercent ?? 0;
+            // Use indexQuotes (dedicated /api/tasi fetch) first, then tasiData from runMarketScan
+            const tasiQ    = indexQuotes['^TASI'];
+            const price    = (tasiQ?.price ?? 0) > 0 ? tasiQ!.price : (tasiData?.price ?? 0);
+            const chg      = tasiQ?.change ?? tasiData?.change ?? 0;
+            const chgPct   = tasiQ?.changePercent ?? tasiData?.changePercent ?? 0;
             const isUp     = chgPct >= 0;
             const hasPrice = price > 0;
             return (
@@ -3204,11 +3206,11 @@ function App() {
           {/* Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 flex-1">
             {[
-              { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount  || 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
-              { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks.length  || 0, iconColor: 'text-amber-500',   delay: 0.07 },
-              { icon: Bell,       accent: 'accent-blue',     label: 'إجمالي التنبيهات', value: status?.alerts.length      || 0, iconColor: 'text-blue-400',    delay: 0.14 },
-              { icon: Bell,       accent: 'accent-amber',    label: 'تنبيهات مخصصة',    value: status?.customAlerts.length|| 0, iconColor: 'text-amber-400',   delay: 0.21 },
-              { icon: History,    accent: 'accent-slate',    label: 'الأسهم المفحوصة',  value: status?.totalCount         || 0, iconColor: 'text-app-text-muted', delay: 0.28 },
+              { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount    ?? 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
+              { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks?.length   ?? 0, iconColor: 'text-amber-500',   delay: 0.07 },
+              { icon: Bell,       accent: 'accent-blue',     label: 'إجمالي التنبيهات', value: status?.alerts?.length       ?? 0, iconColor: 'text-blue-400',    delay: 0.14 },
+              { icon: Bell,       accent: 'accent-amber',    label: 'تنبيهات مخصصة',    value: status?.customAlerts?.length ?? 0, iconColor: 'text-amber-400',   delay: 0.21 },
+              { icon: History,    accent: 'accent-slate',    label: 'الأسهم المفحوصة',  value: status?.totalCount           ?? 0, iconColor: 'text-app-text-muted', delay: 0.28 },
             ].map(({ icon: Icon, accent, label, value, iconColor, delay }, i) => (
               <motion.div
                 key={i}
@@ -3224,7 +3226,7 @@ function App() {
                   <span style={{ fontSize: 11, letterSpacing: '0.06em' }} className="text-app-text-muted font-medium uppercase">{label}</span>
                 </div>
                 <div className="num text-[2.25rem] font-extrabold leading-none tracking-tight text-app-text">
-                  {value.toLocaleString('ar-SA')}
+                  {value.toLocaleString('en-US')}
                 </div>
               </motion.div>
             ))}
