@@ -79,102 +79,29 @@ export function loadLastKnownTasi(ignoreTTL = false): TASIData | null {
   } catch { return null; }
 }
 
-const YF_TASI_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETASI?interval=1d&range=5d';
-
-function parseTasiFromV8Chart(data: any): TASIData | null {
-  const meta = data?.chart?.result?.[0]?.meta;
-  if (!meta) return null;
-  const price: number = meta.regularMarketPrice ?? 0;
-  if (price < 100) return null; // sanity: TASI is always 1,000+
-  const prev: number = meta.chartPreviousClose ?? meta.previousClose ?? price;
-  const change = price - prev;
-  const changePercent = prev ? (change / prev) * 100 : 0;
-  return {
-    price,
-    change,
-    changePercent,
-    high:   meta.regularMarketDayHigh  ?? price,
-    low:    meta.regularMarketDayLow   ?? price,
-    volume: meta.regularMarketVolume   ?? 0,
-    time:   new Date().toISOString(),
-  };
-}
-
 export async function fetchTASI(): Promise<TASIData> {
-  // ── Attempt 1: dedicated /api/tasi (v8 chart — most reliable for indices) ──
-  try {
-    const res = await fetch('/api/tasi');
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.price > 0) {
-        const result: TASIData = {
-          price:         data.price,
-          change:        data.change        ?? 0,
-          changePercent: data.changePercent ?? 0,
-          high:          data.high          ?? data.price,
-          low:           data.low           ?? data.price,
-          volume:        data.volume        ?? 0,
-          time:          data.time          ?? new Date().toISOString(),
-        };
-        saveLastKnownTasi(result);
-        return result;
-      }
-    }
-  } catch { /* fall through */ }
-
-  // ── Attempt 2: /api/quotes with ^TASI (v7) ──
-  try {
-    const res = await fetch('/api/quotes?symbols=%5ETASI');
-    if (res.ok) {
-      const data = await res.json();
-      const q = Array.isArray(data.result) ? data.result[0] : null;
-      if (q?.regularMarketPrice > 100) {
-        const result: TASIData = {
-          price:         q.regularMarketPrice,
-          change:        q.regularMarketChange        ?? 0,
-          changePercent: q.regularMarketChangePercent ?? 0,
-          high:          q.regularMarketDayHigh       ?? q.regularMarketPrice,
-          low:           q.regularMarketDayLow        ?? q.regularMarketPrice,
-          volume:        q.regularMarketVolume        ?? 0,
-          time:          new Date().toISOString(),
-        };
-        saveLastKnownTasi(result);
-        return result;
-      }
-    }
-  } catch { /* fall through */ }
-
-  // ── Attempt 3: allorigins.win CORS proxy ──
-  try {
-    const encoded = encodeURIComponent(YF_TASI_URL);
-    const res = await fetch(`https://api.allorigins.win/get?url=${encoded}`, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) {
-      const wrapper = await res.json();
-      const data = JSON.parse(wrapper.contents ?? '{}');
-      const result = parseTasiFromV8Chart(data);
-      if (result) { saveLastKnownTasi(result); return result; }
-    }
-  } catch { /* fall through */ }
-
-  // ── Attempt 4: corsproxy.io ──
-  try {
-    const encoded = encodeURIComponent(YF_TASI_URL);
-    const res = await fetch(`https://corsproxy.io/?${encoded}`, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) {
-      const data = await res.json();
-      const result = parseTasiFromV8Chart(data);
-      if (result) { saveLastKnownTasi(result); return result; }
-    }
-  } catch { /* fall through */ }
-
-  throw new Error('فشل جلب مؤشر تاسي من جميع المصادر');
+  const res = await fetch('/api/tasi-index');
+  if (!res.ok) throw new Error(`TASI API: HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success || data.price <= 0) throw new Error(data.error ?? 'فشل جلب مؤشر تاسي');
+  const result: TASIData = {
+    price:         data.price,
+    change:        data.change        ?? 0,
+    changePercent: data.changePercent ?? 0,
+    high:          data.high          ?? data.price,
+    low:           data.low           ?? data.price,
+    volume:        data.volume        ?? 0,
+    time:          data.time          ?? new Date().toISOString(),
+  };
+  saveLastKnownTasi(result);
+  return result;
 }
 
 export async function fetchQuotesBatch(symbols: string[]): Promise<any[]> {
-  const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`);
-  if (!res.ok) throw new Error(`Quotes API: HTTP ${res.status}`);
+  const res = await fetch(`/api/stock-price?symbols=${encodeURIComponent(symbols.join(','))}`);
+  if (!res.ok) throw new Error(`Stock price API: HTTP ${res.status}`);
   const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'فشل جلب بيانات الأسهم');
+  if (!data.success) throw new Error(data.error ?? 'فشل جلب بيانات الأسهم');
   return data.result ?? [];
 }
 
@@ -188,7 +115,7 @@ export async function fetchChart(
   const cached = loadChartCache(cacheKey);
   if (cached) return cached;
 
-  const res = await fetch(`/api/chart/${encodeURIComponent(symbol)}?range=${range}`);
+  const res = await fetch(`/api/stock-chart?symbol=${encodeURIComponent(symbol)}&range=${range}`);
   if (!res.ok) throw new Error(`Chart API: HTTP ${res.status}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'فشل جلب بيانات الرسم البياني');

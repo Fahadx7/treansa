@@ -1,0 +1,10 @@
+diff a/firestore.rules b/firestore.rules	(rejected hunks)
+@@ -150,7 +150,7 @@
+ 
+     match /feedback/{feedbackId} {
+       allow read: if isAdmin();
+-      allow create: if isValidFeedback(request.resource.data);
++      allow create: if false; // Feedback should go through the backend only
+       allow update, delete: if isAdmin();
+     }
+ 

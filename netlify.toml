@@ -10,6 +10,30 @@
   schedule = "30 6 * * 0-4"
 
 [[redirects]]
+  from = "/api/tasi-index"
+  to = "/.netlify/functions/tasi-index"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/stock-price"
+  to = "/.netlify/functions/stock-price"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/stock-chart"
+  to = "/.netlify/functions/stock-chart"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/commodities"
+  to = "/.netlify/functions/commodities"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200

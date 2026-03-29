@@ -2643,17 +2643,15 @@ function App() {
     };
     const load = async () => {
       try {
-        const res = await fetch('/api/quotes?symbols=BZ%3DF%2CGC%3DF%2CUSDSAR%3DX');
+        const res = await fetch('/api/commodities');
         if (!res.ok) return;
         const data = await res.json();
-        const quotes: any[] = data.result ?? [];
-        const items: CommodityItem[] = quotes
-          .filter((q: any) => COMMODITY_MAP[q.symbol] && typeof q.regularMarketPrice === 'number')
-          .map((q: any) => ({
-            ...COMMODITY_MAP[q.symbol],
-            price: q.regularMarketPrice as number,
-            changePercent: (q.regularMarketChangePercent as number) ?? 0,
-          }));
+        if (!data.success) return;
+        const items: CommodityItem[] = [
+          { label: 'برنت',       icon: '🛢️', prefix: '$', price: data.brent,  changePercent: 0 },
+          { label: 'ذهب',        icon: '🥇', prefix: '$', price: data.gold,   changePercent: 0 },
+          { label: 'دولار/ريال', icon: '💵', prefix: '',  price: data.usdsar, changePercent: 0 },
+        ].filter(c => c.price > 0);
         if (items.length > 0) setCommodities(items);
       } catch { /* silent fail */ } finally {
         setCommoditiesLoading(false);
@@ -2669,7 +2667,7 @@ function App() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch('/api/tasi');
+        const res = await fetch('/api/tasi-index');
         if (!res.ok) return;
         const data = await res.json();
         if (data.success && typeof data.price === 'number' && data.price > 0) {
