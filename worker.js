@@ -71,31 +71,28 @@ async function handleCommodities() {
     return json(commoditiesCache.data);
   }
 
-  try {
-    const res = await fetch(
-      'https://stooq.com/q/l/?s=lco.f,xauusd&f=sd2t2ohlcv&h&e=json',
-      { headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' } },
-    );
-    if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
+  const items = [
+    { key: 'brent',  symbol: 'BZ=F'     },
+    { key: 'gold',   symbol: 'GC=F'     },
+    { key: 'usdsar', symbol: 'USDSAR=X' },
+  ];
+  const result = { success: true, brent: 0, gold: 0, usdsar: 3.75 };
 
-    const data    = await res.json();
-    const symbols = data.symbols ?? [];
+  await Promise.all(items.map(async ({ key, symbol }) => {
+    try {
+      const res = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } },
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (price) result[key] = price;
+    } catch { /* skip */ }
+  }));
 
-    function findClose(sym) {
-      const found = symbols.find(s => s.symbol.toLowerCase() === sym.toLowerCase());
-      return found ? parseFloat(String(found.close ?? '0')) : 0;
-    }
-
-    const brent = findClose('lco.f');
-    const gold  = findClose('xauusd');
-    if (brent === 0 && gold === 0) throw new Error('No commodity data from Stooq');
-
-    const result = { success: true, brent, gold, usdsar: 3.75 };
-    commoditiesCache = { data: result, ts: Date.now() };
-    return json(result);
-  } catch (e) {
-    return json({ success: false, error: e.message }, 500);
-  }
+  commoditiesCache = { data: result, ts: Date.now() };
+  return json(result);
 }
 
 // ─── Stock Price ──────────────────────────────────────────────────────────────
