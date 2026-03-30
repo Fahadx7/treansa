@@ -52,7 +52,7 @@ const AutoSizer = ({ children }: { children: (size: { width: number; height: num
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, []);
-  return <div ref={ref} style={{ width: '100%', height: '100%' }}>{size.width > 0 ? children(size) : null}</div>;
+  return <div ref={ref} style={{ width: '100%', height: '100%' }}>{children({ width: size.width || 400, height: size.height || 500 })}</div>;
 };
 import { 
   LineChart, 
