@@ -1,6 +1,5 @@
 name = "trandsa2030"
 compatibility_date = "2024-01-01"
-main = "cloudflare-version/functions/api/worker.js"
 
 [assets]
 directory = "dist"
