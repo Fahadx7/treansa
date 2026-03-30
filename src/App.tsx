@@ -39,6 +39,7 @@ import {
   List as ListIcon
 } from 'lucide-react';
 import AIAdvisor from './pages/AIAdvisor';
+import IntelligenceEngine from './pages/IntelligenceEngine';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
@@ -2158,7 +2159,7 @@ function App() {
   const sentRadarAlertsRef = useRef(new Set<string>());
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
-  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor' | 'intelligence'>('home');
   const [indexQuotes, setIndexQuotes] = useState<Record<string, { price: number; change: number; changePercent: number }>>({});
   const [commodities, setCommodities] = useState<CommodityItem[]>([]);
   const [commoditiesLoading, setCommoditiesLoading] = useState(true);
@@ -3111,6 +3112,17 @@ function App() {
                 <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#00d4aa' }} />
               )}
             </button>
+            <button
+              onClick={() => setCurrentPage('intelligence')}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-all relative"
+              style={{ color: currentPage === 'intelligence' ? '#a78bfa' : 'rgba(255,255,255,0.45)' }}
+            >
+              <Zap className="w-4 h-4" />
+              <span>محرك الاستخبارات</span>
+              {currentPage === 'intelligence' && (
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#a78bfa' }} />
+              )}
+            </button>
           </div>
         </div>
       </nav>
@@ -3120,6 +3132,9 @@ function App() {
 
       {/* ── AI Advisor Page ──────────────────────────────────────────────── */}
       {currentPage === 'ai-advisor' && <AIAdvisor stocks={status?.tickerData ?? []} tasiData={tasiData} commodities={commodities} />}
+
+      {/* ── Intelligence Engine Page ─────────────────────────────────────── */}
+      {currentPage === 'intelligence' && <IntelligenceEngine stocks={status?.tickerData ?? []} />}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8" style={{ display: currentPage === 'home' ? undefined : 'none' }}>
         {/* Inline error banner */}

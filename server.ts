@@ -1162,6 +1162,196 @@ ATR (14): ${atr ?? 'N/A'}
         }
     });
 
+    // ========= Multi-Agent Analysis endpoint =========
+    app.post("/api/multi-agent", async (req, res) => {
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        if (!checkRateLimit(ip + ':multi-agent', 3, 60_000)) {
+            return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح (3 طلبات في الدقيقة)" });
+        }
+        const { symbol, companyName, price, change, rsi, wave, macd, bb, atr, stochRsi, volumeRatio } = req.body;
+        if (!symbol || !isValidSaudiSymbol(symbol)) {
+            return res.status(400).json({ success: false, error: "رمز السهم غير صالح" });
+        }
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط" });
+        }
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            const stockInfo = `الشركة: ${companyName} (${symbol}) | السعر: ${price} ر.س | التغيير: ${change?.toFixed ? change.toFixed(2) : change}% | RSI: ${rsi?.toFixed ? rsi.toFixed(1) : rsi} | MACD: ${macd?.histogram?.toFixed ? macd.histogram.toFixed(3) : macd?.histogram} | موجة: ${wave || 'غير محدد'}`;
+
+            const [technical, fundamental, sentiment, risk] = await Promise.all([
+                ai.models.generateContent({
+                    model: "gemini-2.0-flash",
+                    contents: [{ parts: [{ text: `أنت محلل فني متخصص في السوق السعودي. حلل هذا السهم من منظور فني بحت.
+${stockInfo}
+ATR: ${atr ?? 'N/A'} | Bollinger Upper: ${bb?.upper ?? 'N/A'} | Middle: ${bb?.middle ?? 'N/A'} | Lower: ${bb?.lower ?? 'N/A'} | StochRSI K: ${stochRsi?.k ?? 'N/A'} D: ${stochRsi?.d ?? 'N/A'}
+
+قدم:
+1. الاتجاه الفني الحالي (صاعد/هابط/عرضي) مع نسبة الثقة
+2. مستويات الدعم والمقاومة الرئيسية بأرقام محددة
+3. نقطة الدخول المثالية ووقف الخسارة والهدف
+4. جملة واحدة: الخلاصة الفنية
+اجعل الرد مختصراً ومحدداً بأرقام.` }] }]
+                }),
+                ai.models.generateContent({
+                    model: "gemini-2.0-flash",
+                    contents: [{ parts: [{ text: `أنت محلل أساسي متخصص في الشركات السعودية المدرجة. قيّم هذه الشركة من منظور أساسي.
+${companyName} (${symbol}) - السعر الحالي: ${price} ر.س
+
+بناءً على معرفتك بالشركة وقطاعها:
+1. جودة الشركة كاستثمار (ممتاز/جيد/متوسط/ضعيف) مع السبب
+2. المركز التنافسي في السوق السعودي
+3. المخاطر الأساسية الرئيسية
+4. هل السعر الحالي مناسب للدخول؟
+5. جملة واحدة: الخلاصة الأساسية
+اجعل الرد مختصراً ومركزاً.` }] }]
+                }),
+                ai.models.generateContent({
+                    model: "gemini-2.0-flash",
+                    contents: [{ parts: [{ text: `أنت محلل متخصص في قراءة مشاعر السوق وسيكولوجية المتداولين السعوديين.
+${stockInfo}
+نسبة الحجم: ${volumeRatio ?? 1}x من المعدل
+
+حلل:
+1. معنويات السوق الحالية تجاه هذا السهم (خوف/حياد/طمع)
+2. هل الحجم يدعم الحركة السعرية؟
+3. احتمالية القطيع: هل المتداولون يتراكمون أم يتخارجون؟
+4. التوقع النفسي للسعر في الأسبوع القادم
+5. جملة واحدة: خلاصة المشاعر
+اجعل الرد مختصراً ومباشراً.` }] }]
+                }),
+                ai.models.generateContent({
+                    model: "gemini-2.0-flash",
+                    contents: [{ parts: [{ text: `أنت مدير مخاطر محترف متخصص في السوق السعودي.
+${stockInfo}
+ATR: ${atr ?? 'N/A'} | نسبة الحجم: ${volumeRatio ?? 1}x
+
+قيّم:
+1. مستوى المخاطرة الإجمالي (منخفض/متوسط/عالي/مرتفع جداً) مع السبب
+2. وقف الخسارة المثالي بناءً على ATR بسعر محدد
+3. نسبة المخاطرة/العائد المتوقعة
+4. حجم المركز المناسب لمحفظة 100,000 ر.س (عند مخاطرة 1-2%)
+5. جملة واحدة: توصية إدارة المخاطر
+اجعل الرد مختصراً ومحدداً بأرقام.` }] }]
+                })
+            ]);
+
+            const technicalText = technical.text || '';
+            const fundamentalText = fundamental.text || '';
+            const sentimentText = sentiment.text || '';
+            const riskText = risk.text || '';
+
+            const synthesis = await ai.models.generateContent({
+                model: "gemini-2.0-flash",
+                contents: [{ parts: [{ text: `أنت محلل رئيسي تجمع آراء خبراء متعددين لاتخاذ قرار نهائي.
+
+السهم: ${companyName} (${symbol}) - السعر: ${price} ر.س
+
+التحليل الفني:
+${technicalText}
+
+التحليل الأساسي:
+${fundamentalText}
+
+تحليل المشاعر:
+${sentimentText}
+
+تحليل المخاطر:
+${riskText}
+
+بناءً على هذه التحليلات الأربعة، قدم:
+1. **القرار النهائي**: شراء الآن / انتظار فرصة أفضل / تجنب
+2. **مستوى الإجماع**: كم من التحليلات تدعم القرار؟
+3. **الاستراتيجية المقترحة** في 3 نقاط عملية محددة
+4. **أهم تحذير واحد** يجب مراعاته
+اجعل الخلاصة مختصرة وحاسمة.` }] }]
+            });
+
+            res.json({
+                success: true,
+                agents: {
+                    technical: technicalText,
+                    fundamental: fundamentalText,
+                    sentiment: sentimentText,
+                    risk: riskText,
+                    synthesis: synthesis.text || ''
+                }
+            });
+        } catch (e: any) {
+            console.error("❌ Multi-Agent Error:", e.message);
+            res.status(500).json({ success: false, error: "فشل التحليل متعدد الوكلاء." });
+        }
+    });
+
+    // ========= Scenario Simulator endpoint =========
+    app.post("/api/scenario", async (req, res) => {
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        if (!checkRateLimit(ip + ':scenario', 5, 60_000)) {
+            return res.status(429).json({ success: false, error: "تجاوزت الحد المسموح (5 طلبات في الدقيقة)" });
+        }
+        const { scenario, stocks } = req.body;
+        if (!scenario || typeof scenario !== 'string' || scenario.trim().length < 5) {
+            return res.status(400).json({ success: false, error: "يرجى إدخال سيناريو صالح (5 أحرف على الأقل)" });
+        }
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(503).json({ success: false, error: "مفتاح Gemini غير مضبوط" });
+        }
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            const stocksList = Array.isArray(stocks)
+                ? (stocks as Array<{ symbol: string; companyName: string }>)
+                    .slice(0, 30)
+                    .map(s => `${s.symbol}:${s.companyName}`)
+                    .join('، ')
+                : '2222:أرامكو، 2010:سابك، 1120:الراجحي، 7010:stc، 1180:البنك الأهلي، 2082:أكوا باور، 4030:البحري، 2380:بترورابغ، 1211:معادن، 7020:موبايلي';
+
+            const prompt = `أنت محلل اقتصادي متخصص في تأثير الأحداث الكلية على سوق الأسهم السعودي (تاسي).
+
+السيناريو: "${scenario.trim()}"
+
+من قائمة الأسهم التالية في السوق السعودي:
+${stocksList}
+
+حلل تأثير هذا السيناريو وأجب بتنسيق JSON التالي بالضبط:
+{
+  "scenario_summary": "ملخص السيناريو وتأثيره الكلي في جملتين",
+  "overall_market_impact": "إيجابي أو سلبي أو محايد",
+  "impact_percentage": "نسبة التأثير المتوقعة على مؤشر تاسي مثال: -3% إلى -5%",
+  "affected_sectors": [
+    {"sector": "اسم القطاع", "impact": "إيجابي أو سلبي", "reason": "السبب في جملة", "severity": 3}
+  ],
+  "top_negative_stocks": [
+    {"symbol": "رمز السهم 4 أرقام", "company": "اسم الشركة", "reason": "سبب التأثير السلبي", "expected_change": "-5%"}
+  ],
+  "top_positive_stocks": [
+    {"symbol": "رمز السهم 4 أرقام", "company": "اسم الشركة", "reason": "سبب الاستفادة", "expected_change": "+3%"}
+  ],
+  "trading_strategy": "الاستراتيجية المقترحة للمتداول في 3 نقاط واضحة",
+  "time_horizon": "الإطار الزمني المتوقع للتأثير مثال: 1-2 أسبوع"
+}
+
+أجب بـ JSON فقط بدون أي نص خارج الـ JSON.`;
+
+            const response = await ai.models.generateContent({
+                model: "gemini-2.0-flash",
+                contents: [{ parts: [{ text: prompt }] }],
+                config: { responseMimeType: "application/json" }
+            });
+
+            let result: Record<string, unknown>;
+            try {
+                result = JSON.parse(response.text || '{}');
+            } catch {
+                result = { scenario_summary: response.text || 'تعذر تحليل السيناريو', overall_market_impact: 'غير محدد' };
+            }
+
+            res.json({ success: true, result });
+        } catch (e: any) {
+            console.error("❌ Scenario Error:", e.message);
+            res.status(500).json({ success: false, error: "فشل تحليل السيناريو." });
+        }
+    });
+
     // Vite middleware for development
     if (process.env.NODE_ENV !== "production") {
         const vite = await createViteServer({
