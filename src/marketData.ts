@@ -248,3 +248,39 @@ export function calcStochRSI(closes: number[], rsiP = 14, stochP = 14) {
   const k = kSeries[kSeries.length - 1];
   const d = kSeries.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, kSeries.length);
 return { k: +k.toFixed(2), d: +d.toFixed(2) };
+  }
+
+export function detectElliott(closes: number[]): string {
+  if (closes.length < 20) return 'غير محدد';
+  const W      = 5;
+  const recent = closes.slice(-60);
+  const pivots: { type: 'high' | 'low'; price: number }[] = [];
+
+  for (let i = W; i < recent.length - W; i++) {
+    const cur = recent[i];
+    const L   = recent.slice(i - W, i);
+    const R   = recent.slice(i + 1, i + W + 1);
+    if (cur > Math.max(...L) && cur > Math.max(...R))
+      pivots.push({ type: 'high', price: cur });
+    else if (cur < Math.min(...L) && cur < Math.min(...R))
+      pivots.push({ type: 'low', price: cur });
+  }
+
+  const last = recent[recent.length - 1];
+
+  if (pivots.length >= 4) {
+    const [p1, p2, p3, p4] = pivots.slice(-4);
+    if (p1.type === 'low' && p2.type === 'high' && p3.type === 'low' && p4.type === 'high') {
+      if (p3.price > p1.price && p4.price > p2.price && last > p4.price)
+        return 'بداية الموجة 3 (انفجارية) 🚀';
+    }
+    if (p1.type === 'high' && p2.type === 'low' && p3.type === 'high' && p4.type === 'low') {
+      if (p3.price < p1.price && p4.price < p2.price && last < p4.price)
+        return 'بداية موجة هابطة 📉';
+    }
+  }
+
+  if (pivots.length >= 3) {
+    const [p1, p2, p3] = pivots.slice(-3);
+    if (p1.type === 'low' && p2.type === 'high' && p3.type === 'low') {
+      if (p3.price > p1.price && last > p2.price)  return 'بداية الموجة 3 (ا
