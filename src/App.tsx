@@ -42,8 +42,8 @@ import AIAdvisor from './pages/AIAdvisor';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
-import * as ReactWindow from 'react-window';
-import * as AutoSizerModule from 'react-virtualized-auto-sizer';
+import { FixedSizeList as List } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import { 
   LineChart, 
   Line, 
@@ -104,8 +104,7 @@ import {
   type TASIData,
 } from './marketData';
 
-const List = (ReactWindow as any).FixedSizeList;
-const AutoSizerAny = (AutoSizerModule as any).default || (AutoSizerModule as any).AutoSizer || AutoSizerModule;
+
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
   constructor(props: any) {
@@ -3419,7 +3418,7 @@ function App() {
                   <div className="flex-1 text-xs font-medium text-app-text-muted uppercase text-left">التغيير</div>
                 </div>
                 <div className="flex-1 relative">
-                  <AutoSizerAny>
+                  <AutoSizer>
                     {({ height, width }: any) => {
                       const allStocks = status?.tickerData ?? [];
 
@@ -3503,7 +3502,7 @@ function App() {
                         </List>
                       );
                     }}
-                  </AutoSizerAny>
+                  </AutoSizer>
                 </div>
               </>
              </div>
@@ -3549,7 +3548,7 @@ function App() {
                آخر التنبيهات
              </h2>
              <div className="bg-app-surface/50 border border-app-border rounded-2xl overflow-hidden flex-1 min-h-[500px] relative">
-               <AutoSizerAny>
+               <AutoSizer>
                  {({ height, width }: any) => (
                    <List
                      height={height}
@@ -3562,7 +3561,7 @@ function App() {
                      {AlertRow}
                    </List>
                  )}
-               </AutoSizerAny>
+               </AutoSizer>
                {status?.alerts.length === 0 && (
                  <div className="absolute inset-0 flex items-center justify-center text-app-text-muted italic text-sm">
                    لا توجد تنبيهات بعد
