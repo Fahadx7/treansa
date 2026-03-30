@@ -6,6 +6,110 @@ import { SAUDI_STOCKS } from '../../src/symbols';
 // Yahoo Finance removed — data now served by dedicated Twelve Data functions:
 // /api/tasi-index, /api/stock-price, /api/stock-chart, /api/commodities
 
+const TD_API_KEY = process.env.TWELVE_DATA_API_KEY ?? '';
+const TD_BASE = 'https://api.twelvedata.com';
+const YF_UA = 'Mozilla/5.0 (compatible; TrandSA/1.0)';
+
+// ========= fetchWithTimeout =========
+async function fetchWithTimeout(
+    url: string,
+    options: RequestInit & { timeoutMs?: number } = {}
+): Promise<Response> {
+    const { timeoutMs = 10000, ...fetchOpts } = options;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...fetchOpts, signal: controller.signal });
+        return res;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// ========= Twelve Data wrappers (replace old Yahoo Finance helpers) =========
+function toTD(symbol: string): string {
+    if (symbol === '^TASI') return 'TASI:XSAU';
+    return symbol.replace(/\.SR$/i, '') + ':XSAU';
+}
+
+function mapTDQuote(sym: string, q: any): any {
+    return {
+        symbol: sym,
+        shortName: q.name ?? sym,
+        regularMarketPrice: parseFloat(q.close ?? '0'),
+        regularMarketChange: parseFloat(q.change ?? '0'),
+        regularMarketChangePercent: parseFloat(q.percent_change ?? '0'),
+        regularMarketVolume: parseInt(q.volume ?? '0', 10),
+        averageDailyVolume3Month: parseInt(q.average_volume ?? '0', 10),
+        regularMarketDayHigh: parseFloat(q.high ?? q.close ?? '0'),
+        regularMarketDayLow: parseFloat(q.low ?? q.close ?? '0'),
+    };
+}
+
+async function yfQuote(symbolOrSymbols: string | string[], timeoutMs = 10000): Promise<any> {
+    const isArray = Array.isArray(symbolOrSymbols);
+    const symbols = isArray ? symbolOrSymbols : [symbolOrSymbols];
+    const tdSyms = symbols.map(toTD).join(',');
+    const res = await fetchWithTimeout(
+        `${TD_BASE}/quote?symbol=${encodeURIComponent(tdSyms)}&apikey=${TD_API_KEY}`,
+        { timeoutMs }
+    );
+    if (!res.ok) throw new Error(`Twelve Data HTTP ${res.status}`);
+    const data: any = await res.json();
+
+    if (symbols.length === 1) {
+        if (data.status === 'error' || !data.close) throw new Error('No data');
+        const mapped = mapTDQuote(symbols[0], data);
+        return isArray ? [mapped] : mapped;
+    }
+
+    const results: any[] = [];
+    for (const sym of symbols) {
+        const tdKey = toTD(sym);
+        const q = data[tdKey];
+        if (!q || q.status === 'error' || !q.close) continue;
+        results.push(mapTDQuote(sym, q));
+    }
+    return results;
+}
+
+async function yfChart(symbol: string, interval: string, _period1: number): Promise<any> {
+    const tdSym = toTD(symbol);
+    const intervalMap: Record<string, string> = {
+        '5m': '5min', '15m': '15min', '1h': '1h', '1d': '1day',
+    };
+    const tdInterval = intervalMap[interval] ?? '5min';
+
+    const seconds = Math.floor(Date.now() / 1000) - _period1;
+    const days = Math.ceil(seconds / 86400);
+    let outputsize = 200;
+    if (tdInterval === '5min') outputsize = Math.min(500, days * 78);
+    else if (tdInterval === '1h') outputsize = Math.min(500, days * 7);
+    else outputsize = Math.min(500, days);
+
+    const url = `${TD_BASE}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${tdInterval}&outputsize=${outputsize}&apikey=${TD_API_KEY}`;
+    const res = await fetchWithTimeout(url, { timeoutMs: 10000 });
+    if (!res.ok) throw new Error(`Twelve Data HTTP ${res.status}`);
+    const data: any = await res.json();
+
+    if (data.status === 'error') throw new Error(data.message ?? 'Twelve Data error');
+
+    const values: any[] = data.values ?? [];
+    const quotes = values
+        .reverse()
+        .map((v: any) => ({
+            date: new Date(v.datetime).toISOString(),
+            open: parseFloat(v.open ?? '0'),
+            high: parseFloat(v.high ?? '0'),
+            low: parseFloat(v.low ?? '0'),
+            close: parseFloat(v.close ?? '0'),
+            volume: parseInt(v.volume ?? '0', 10),
+        }))
+        .filter((q: any) => q.close > 0);
+
+    return { quotes, meta: data.meta ?? {} };
+}
+
 // ========= Telegram =========
 const cleanToken = (t: string) => {
     if (!t) return "";
