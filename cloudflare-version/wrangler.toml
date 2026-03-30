@@ -1,0 +1,21 @@
+# Cloudflare Pages — TrandSA
+# Deploy: wrangler pages deploy dist --project-name=treansa
+# Or connect the GitHub repo in the Cloudflare dashboard (Pages > Create project)
+
+name = "treansa"
+compatibility_date = "2024-09-25"
+
+# Build output directory (Vite default)
+pages_build_output_dir = "dist"
+
+# ─── No environment variables needed ───────────────────────────────────────
+# Stooq is free and requires no API key.
+# If you later add other services, set secrets via:
+#   wrangler pages secret put SECRET_NAME --project-name=treansa
+# ───────────────────────────────────────────────────────────────────────────
+
+[env.production]
+# Production vars (none required for Stooq)
+
+[env.preview]
+# Preview/staging vars (none required for Stooq)
