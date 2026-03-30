@@ -4,8 +4,8 @@ const TTL = 5 * 60 * 1000;
 const cache = new Map<string, { data: any; ts: number }>();
 
 function toStooq(symbol: string): string {
-  // "2222.SR" → "2222.sr"
-  return symbol.toLowerCase();
+  // "2222.SR" → "2222.sa"
+  return symbol.replace(/\.SR$/i, '.sa');
 }
 
 async function fetchStooq(symbol: string): Promise<any | null> {
@@ -20,7 +20,6 @@ async function fetchStooq(symbol: string): Promise<any | null> {
     if (lines.length < 2) return null;
 
     const values = lines[1].split(',');
-    // CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
     const [sym, date, time, open, high, low, close, volume] = values;
     if (!close || close === 'N/D') return null;
 
