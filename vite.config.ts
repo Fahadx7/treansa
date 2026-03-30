@@ -6,6 +6,11 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    build: {
+      commonjsOptions: {
+        transformMixedEsModules: true,
+      },
+    },
     // GEMINI_API_KEY is NOT exposed to the frontend (stays server-side only)
     resolve: {
       alias: {

@@ -43,7 +43,7 @@ import AIAdvisor from './pages/AIAdvisor';
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { FixedSizeList as List } from 'react-window';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import { 
   LineChart, 
   Line, 
