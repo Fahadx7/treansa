@@ -1,51 +1,39 @@
-import type { Handler } from '@netlify/functions';
+export async function onRequest() {
+  const PROXIES = [
+    'https://api.allorigins.win/get?url=',
+    'https://corsproxy.io/?',
+  ];
+  const target = encodeURIComponent('https://stooq.com/q/l/?s=^tasi.sa&f=sd2t2ohlcv&h&e=csv');
 
-const API_KEY = process.env.TWELVE_DATA_API_KEY ?? '';
-const BASE    = 'https://api.twelvedata.com';
-
-// In-memory cache — 5-minute TTL
-let cache: { data: any; ts: number } | null = null;
-const TTL = 5 * 60 * 1000;
-
-export const handler: Handler = async () => {
-  if (cache && Date.now() - cache.ts < TTL) {
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cache.data) };
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy + target);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const text = json.contents ?? '';
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) continue;
+      const [, , , open, high, low, close, volume] = lines[1].split(',');
+      if (!close || close.trim() === 'N/D') continue;
+      const price = parseFloat(close);
+      const openN = parseFloat(open);
+      if (price < 1000) continue;
+      const change = price - openN;
+      const changePercent = (change / openN) * 100;
+      return new Response(JSON.stringify({
+        success: true,
+        price,
+        change: parseFloat(change.toFixed(2)),
+        changePercent: parseFloat(changePercent.toFixed(2)),
+        high: parseFloat(high),
+        low: parseFloat(low),
+        volume: parseInt(volume ?? '0', 10),
+        time: new Date().toISOString(),
+      }), { headers: { 'Content-Type': 'application/json' } });
+    } catch { continue; }
   }
 
-  try {
-    const res = await fetch(`${BASE}/quote?symbol=TASI:XSAU&apikey=${API_KEY}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const q: any = await res.json();
-
-    if (q.status === 'error' || !q.close) {
-      throw new Error(q.message || 'No data from Twelve Data');
-    }
-
-    const price         = parseFloat(q.close);
-    const change        = parseFloat(q.change        ?? '0');
-    const changePercent = parseFloat(q.percent_change ?? '0');
-
-    if (price < 1000) throw new Error(`Unexpected TASI price: ${price}`);
-
-    const result = {
-      success:       true,
-      price,
-      change,
-      changePercent,
-      high:   parseFloat(q.high          ?? q.close),
-      low:    parseFloat(q.low           ?? q.close),
-      volume: parseInt(q.volume          ?? '0', 10),
-      time:   new Date().toISOString(),
-    };
-
-    cache = { data: result, ts: Date.now() };
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(result) };
-
-  } catch (e: any) {
-    return {
-      statusCode: 503,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ success: false, error: e.message }),
-    };
-  }
-};
+  return new Response(JSON.stringify({ success: false, error: 'فشل جلب مؤشر تاسي' }), {
+    status: 503, headers: { 'Content-Type': 'application/json' }
+  });
+}
