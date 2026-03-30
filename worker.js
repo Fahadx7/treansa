@@ -205,6 +205,10 @@ export default {
     if (url.pathname.startsWith('/api/stock-price'))      return handleStockPrice(url);
     if (url.pathname.startsWith('/api/stock-chart'))      return handleStockChart(url);
 
+    if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.svg') {
+      return env.ASSETS.fetch(request);
+    }
+
     // All other requests → serve static assets (SPA)
     return env.ASSETS.fetch(request);
   },
