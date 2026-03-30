@@ -118,11 +118,13 @@ async function handleStockPrice(url) {
       const q = data?.chart?.result?.[0];
       if (!q) return;
       const meta = q.meta;
-      const change = (meta.regularMarketPrice ?? 0) - (meta.previousClose ?? 0);
-      const changePct = meta.previousClose ? (change / meta.previousClose * 100) : 0;
+      const price = meta.regularMarketPrice ?? 0;
+      const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
+      const change = price - prevClose;
+      const changePct = prevClose > 0 ? (change / prevClose * 100) : 0;
       results.push({
         symbol,
-        regularMarketPrice:         meta.regularMarketPrice ?? 0,
+        regularMarketPrice:         price,
         regularMarketChange:        parseFloat(change.toFixed(2)),
         regularMarketChangePercent: parseFloat(changePct.toFixed(2)),
         regularMarketVolume:        meta.regularMarketVolume ?? 0,
@@ -136,38 +138,16 @@ async function handleStockPrice(url) {
   return json({ success: true, result: results });
 }
 
-// ─── Stock Chart ──────────────────────────────────────────────────────────────
+// ─── Stock Chart (Yahoo Finance) ─────────────────────────────────────────────
 
-const RANGE_DAYS = { '1d': 5, '1w': 7, '1mo': 30, '6mo': 180, '1y': 365, '5y': 1825 };
-
-function toStooqDate(d) {
-  const y   = d.getFullYear();
-  const m   = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
-}
-
-function parseCsv(csv) {
-  const lines = csv.trim().split('\n');
-  if (lines.length < 2) return [];
-  const bars = [];
-  for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(',');
-    if (parts.length < 5) continue;
-    const [dateStr, openStr, highStr, lowStr, closeStr, volStr] = parts;
-    const close = parseFloat(closeStr);
-    if (!close || close === 0) continue;
-    bars.push({
-      date:   new Date(dateStr.trim()).toISOString(),
-      open:   parseFloat(openStr),
-      high:   parseFloat(highStr),
-      low:    parseFloat(lowStr),
-      close,
-      volume: parseInt(volStr ?? '0', 10),
-    });
-  }
-  return bars.reverse(); // Stooq: newest-first → reverse to chronological
-}
+const RANGE_MAP = {
+  '1d':  { period1: () => Math.floor(Date.now() / 1000) - 86400,     interval: '5m'  },
+  '1w':  { period1: () => Math.floor(Date.now() / 1000) - 604800,    interval: '1h'  },
+  '1mo': { period1: () => Math.floor(Date.now() / 1000) - 2592000,   interval: '1d'  },
+  '6mo': { period1: () => Math.floor(Date.now() / 1000) - 15552000,  interval: '1d'  },
+  '1y':  { period1: () => Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk' },
+  '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
+};
 
 async function handleStockChart(url) {
   const symbol = url.searchParams.get('symbol') ?? '';
@@ -178,24 +158,40 @@ async function handleStockChart(url) {
   const hit      = chartCache.get(cacheKey);
   if (hit && Date.now() - hit.ts < TTL) return json(hit.data);
 
-  const days     = RANGE_DAYS[range] ?? RANGE_DAYS['1mo'];
-  const today    = new Date();
-  const fromDate = new Date(today.getTime() - days * 24 * 60 * 60 * 1000);
-  const stooqSym = symbol.replace(/\.SR$/i, '.sa');
+  const cfg     = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
+  const period1 = cfg.period1();
+  const period2 = Math.floor(Date.now() / 1000);
 
   try {
-    const csvUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSym)}&d1=${toStooqDate(fromDate)}&d2=${toStooqDate(today)}&i=d`;
-    const res = await fetch(csvUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' },
-    });
-    if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${cfg.interval}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data   = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) throw new Error('No data');
 
-    const quotes = parseCsv(await res.text());
-    if (quotes.length === 0) throw new Error(`No chart data for ${symbol}`);
+    const timestamps = result.timestamp ?? [];
+    const quote      = result.indicators?.quote?.[0] ?? {};
+    const closes     = quote.close  ?? [];
+    const opens      = quote.open   ?? [];
+    const highs      = quote.high   ?? [];
+    const lows       = quote.low    ?? [];
+    const volumes    = quote.volume ?? [];
 
-    const result = { success: true, meta: { symbol, stooqSymbol: stooqSym, range }, quotes };
-    chartCache.set(cacheKey, { data: result, ts: Date.now() });
-    return json(result);
+    const quotes = timestamps.map((t, i) => ({
+      date:   new Date(t * 1000).toISOString(),
+      open:   opens[i]   ?? 0,
+      high:   highs[i]   ?? 0,
+      low:    lows[i]    ?? 0,
+      close:  closes[i]  ?? 0,
+      volume: volumes[i] ?? 0,
+    })).filter(q => q.close > 0);
+
+    const payload = { success: true, meta: result.meta, quotes };
+    chartCache.set(cacheKey, { data: payload, ts: Date.now() });
+    return json(payload);
   } catch (e) {
     return json({ success: false, error: e.message }, 500);
   }
