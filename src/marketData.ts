@@ -247,4 +247,4 @@ export function calcStochRSI(closes: number[], rsiP = 14, stochP = 14) {
   }
   const k = kSeries[kSeries.length - 1];
   const d = kSeries.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, kSeries.length);
-  return { k: +k.toFixed(2), d: +
+return { k: +k.toFixed(2), d: +d.toFixed(2) };
