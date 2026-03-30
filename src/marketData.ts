@@ -248,7 +248,7 @@ export function calcStochRSI(closes: number[], rsiP = 14, stochP = 14) {
   const k = kSeries[kSeries.length - 1];
   const d = kSeries.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, kSeries.length);
 return { k: +k.toFixed(2), d: +d.toFixed(2) };
-  }
+}
 
 export function detectElliott(closes: number[]): string {
   if (closes.length < 20) return 'غير محدد';
@@ -283,4 +283,159 @@ export function detectElliott(closes: number[]): string {
   if (pivots.length >= 3) {
     const [p1, p2, p3] = pivots.slice(-3);
     if (p1.type === 'low' && p2.type === 'high' && p3.type === 'low') {
-      if (p3.price > p1.price && last > p2.price)  return 'بداية الموجة 3 (ا
+      if (p3.price > p1.price && last > p2.price)  return 'بداية الموجة 3 (انفجارية) 🚀';
+      if (p3.price > p1.price && last > p3.price)  return 'نهاية الموجة 2 (تصحيح منتهي) ⏳';
+      if (p3.price < p1.price)                     return 'قاع أدنى — تصحيح ABC ⚠️';
+    }
+    if (p1.type === 'high' && p2.type === 'low' && p3.type === 'high') {
+      if (p3.price < p1.price && last < p2.price)  return 'بداية موجة هابطة 📉';
+      if (p3.price > p1.price && last > p3.price)  return 'اختراق قمة سابقة ⚡';
+    }
+  }
+
+  if (pivots.length >= 2) {
+    const [p1, p2] = pivots.slice(-2);
+    if (p1.type === 'low'  && p2.type === 'high' && last > p2.price) return 'اختراق قمة سابقة ⚡';
+    if (p1.type === 'high' && p2.type === 'low'  && last < p2.price) return 'كسر قاع سابق 📉';
+  }
+
+  return 'غير محدد';
+}
+
+export function computeIndicators(quotes: any[]) {
+  const closes = quotes.map(q => q.close as number);
+  const highs  = quotes.map(q => (q.high  ?? q.close) as number);
+  const lows   = quotes.map(q => (q.low   ?? q.close) as number);
+  return {
+    rsi:      calcRSI(closes),
+    macd:     calcMACD(closes),
+    bb:       calcBB(closes),
+    atr:      calcATR(highs, lows, closes),
+    stochRsi: calcStochRSI(closes),
+    wave:     detectElliott(closes),
+  };
+}
+
+export interface StockScore {
+  total: number;
+  label: string;
+  color: 'emerald' | 'amber' | 'blue' | 'slate';
+  reasons: string[];
+}
+
+export function scoreStock(
+  stock: any,
+  indicators?: ReturnType<typeof computeIndicators>,
+): StockScore {
+  const reasons: string[] = [];
+  const rsi         = indicators?.rsi         ?? stock.rsi         ?? 50;
+  const macd        = indicators?.macd        ?? stock.macd;
+  const bb          = indicators?.bb          ?? stock.bb;
+  const stochRsi    = indicators?.stochRsi    ?? stock.stochRsi;
+  const wave        = indicators?.wave        ?? stock.wave        ?? 'غير محدد';
+  const volumeRatio = stock.volumeRatio ?? 1;
+  const price       = stock.price       ?? 0;
+
+  if (rsi >= 45 && rsi <= 70) reasons.push(`RSI ${rsi.toFixed(0)} في منطقة الزخم`);
+  if (macd?.histogram > 0) reasons.push('MACD هيستوجرام إيجابي');
+  if (bb?.middle > 0 && price > bb.middle) reasons.push('السعر فوق SMA20');
+  if (volumeRatio >= 1.5) reasons.push(`حجم ${volumeRatio.toFixed(1)}x المتوسط`);
+  if (stochRsi && stochRsi.k > stochRsi.d && stochRsi.k < 80) reasons.push('StochRSI تقاطع صعودي');
+  if (wave && wave !== 'غير محدد' && (wave.includes('🚀') || wave.includes('⚡') || wave.includes('⏳')))
+    reasons.push(wave.replace(/[🚀⚡⏳📉⚠️]/g, '').trim());
+
+  const total = reasons.length;
+  let label: string;
+  let color: StockScore['color'];
+  if      (total >= 5) { label = 'إشارة قوية جداً'; color = 'emerald'; }
+  else if (total >= 4) { label = 'إشارة قوية';      color = 'emerald'; }
+  else if (total >= 3) { label = 'إشارة متوسطة';    color = 'amber';   }
+  else if (total >= 2) { label = 'مراقبة';           color = 'blue';    }
+  else                 { label = 'ضعيف';             color = 'slate';   }
+
+  return { total, label, color, reasons };
+}
+
+export function buildStockFromQuote(q: any): any {
+  const symbol: string = q.symbol;
+  const avgVol = q.averageDailyVolume10Day || 0;
+  const vol    = q.regularMarketVolume     || 0;
+  return {
+    symbol,
+    companyName: SAUDI_STOCKS[symbol.split('.')[0]] || symbol,
+    price:       q.regularMarketPrice        || 0,
+    change:      q.regularMarketChangePercent || 0,
+    volume:      vol,
+    volumeRatio: avgVol > 0 ? vol / avgVol : 1,
+    rsi:  50,
+    wave: 'غير محدد',
+    macd: { macd: 0, signal: 0, histogram: 0 },
+    bb:   { middle: 0, upper: 0, lower: 0 },
+  };
+}
+
+const ENRICH_TOP_N  = 20;
+const ENRICH_BATCH  = 5;
+
+export async function enrichStocksWithChartData(
+  stocks: any[],
+  onBatchDone: (updated: any[]) => void,
+): Promise<void> {
+  const enriched = [...stocks];
+  const candidates = [...stocks]
+    .sort((a, b) => b.volumeRatio - a.volumeRatio)
+    .slice(0, ENRICH_TOP_N);
+
+  for (let i = 0; i < candidates.length; i += ENRICH_BATCH) {
+    const batch = candidates.slice(i, i + ENRICH_BATCH);
+    const results = await Promise.allSettled(
+      batch.map(s => fetchChart(s.symbol, '1mo')),
+    );
+    let changed = false;
+    for (let j = 0; j < batch.length; j++) {
+      const r = results[j];
+      if (r.status !== 'fulfilled' || r.value.quotes.length < 20) continue;
+      const ind = computeIndicators(r.value.quotes);
+      const idx = enriched.findIndex(s => s.symbol === batch[j].symbol);
+      if (idx === -1) continue;
+      enriched[idx] = { ...enriched[idx], rsi: ind.rsi, macd: ind.macd, bb: ind.bb, atr: ind.atr, stochRsi: ind.stochRsi, wave: ind.wave };
+      changed = true;
+    }
+    if (changed) onBatchDone([...enriched]);
+  }
+}
+
+const DAY_NAMES = ['أحد', 'اثن', 'ثلث', 'أرب', 'خمس', 'جمع', 'سبت'];
+
+function formatChartTime(date: Date, range: ChartRange): string {
+  const hhmm = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (range === '1d') return hhmm;
+  if (range === '1w') return `${DAY_NAMES[date.getDay()]} ${hhmm}`;
+  if (range === '1mo' || range === '6mo') return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+  return date.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+}
+
+export function buildHistoryFromChart(meta: any, quotes: any[], range: ChartRange = '1mo'): any[] {
+  const valid = quotes
+    .filter((q: any) => { const c = q.close; return c !== null && c !== undefined && !isNaN(c) && c > 0; })
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const allCloses = valid.map((q: any) => q.close as number);
+
+  return valid.map((q: any, i: number) => {
+    const subCloses = allCloses.slice(0, i + 1);
+    const m = calcMACD(subCloses);
+    const b = calcBB(subCloses);
+    return {
+      time:      formatChartTime(new Date(q.date), range),
+      fullDate:  q.date,
+      price:     +(q.close as number).toFixed(2),
+      macd:      m.macd,
+      signal:    m.signal,
+      histogram: m.histogram,
+      bbUpper:   b.upper,
+      bbMiddle:  b.middle,
+      bbLower:   b.lower,
+    };
+  });
+}
