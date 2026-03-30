@@ -1,32 +1,50 @@
 import type { Handler } from '@netlify/functions';
 
-const API_KEY = process.env.TWELVE_DATA_API_KEY ?? '';
-const BASE    = 'https://api.twelvedata.com';
-const TTL     = 5 * 60 * 1000;
-
-// symbol-level cache: "2222.SR" → { data, ts }
+const TTL = 5 * 60 * 1000;
 const cache = new Map<string, { data: any; ts: number }>();
 
-function toTD(symbol: string): string {
-  // "2222.SR" → "2222:XSAU"
-  return symbol.replace(/\.SR$/i, '') + ':XSAU';
+function toStooq(symbol: string): string {
+  // "2222.SR" → "2222.sr"
+  return symbol.toLowerCase();
 }
 
-function mapQuote(sym: string, q: any): any {
-  // Map Twelve Data /quote fields to the Yahoo Finance shape that buildStockFromQuote expects
-  return {
-    symbol:                    sym,                                          // "2222.SR"
-    shortName:                 q.name ?? sym,
-    regularMarketPrice:        parseFloat(q.close              ?? '0'),
-    regularMarketChange:       parseFloat(q.change             ?? '0'),
-    regularMarketChangePercent:parseFloat(q.percent_change     ?? '0'),
-    regularMarketVolume:       parseInt(q.volume               ?? '0', 10),
-    averageDailyVolume3Month:  parseInt(q.average_volume       ?? '0', 10),
-    fiftyTwoWeekHigh:          parseFloat(q.fifty_two_week?.high ?? q.close ?? '0'),
-    fiftyTwoWeekLow:           parseFloat(q.fifty_two_week?.low  ?? q.close ?? '0'),
-    regularMarketDayHigh:      parseFloat(q.high               ?? q.close ?? '0'),
-    regularMarketDayLow:       parseFloat(q.low                ?? q.close ?? '0'),
-  };
+async function fetchStooq(symbol: string): Promise<any | null> {
+  const s = toStooq(symbol);
+  const url = `https://stooq.com/q/l/?s=${s}&f=sd2t2ohlcv&h&e=csv`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const text = await res.text();
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return null;
+
+    const values = lines[1].split(',');
+    // CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
+    const [sym, date, time, open, high, low, close, volume] = values;
+    if (!close || close === 'N/D') return null;
+
+    const closeN = parseFloat(close);
+    const openN  = parseFloat(open);
+    const change = closeN - openN;
+    const changePct = (change / openN) * 100;
+
+    return {
+      symbol,
+      shortName:                  symbol,
+      regularMarketPrice:         closeN,
+      regularMarketChange:        parseFloat(change.toFixed(2)),
+      regularMarketChangePercent: parseFloat(changePct.toFixed(2)),
+      regularMarketVolume:        parseInt(volume ?? '0', 10),
+      averageDailyVolume3Month:   0,
+      fiftyTwoWeekHigh:           parseFloat(high),
+      fiftyTwoWeekLow:            parseFloat(low),
+      regularMarketDayHigh:       parseFloat(high),
+      regularMarketDayLow:        parseFloat(low),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export const handler: Handler = async (event) => {
@@ -37,42 +55,21 @@ export const handler: Handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ success: false, error: 'symbols required' }) };
   }
 
-  const now     = Date.now();
-  const results: any[]    = [];
-  const toFetch: string[] = [];
+  const now = Date.now();
+  const results: any[] = [];
 
-  for (const sym of symbols) {
+  await Promise.all(symbols.map(async (sym) => {
     const hit = cache.get(sym);
-    if (hit && now - hit.ts < TTL) results.push(hit.data);
-    else toFetch.push(sym);
-  }
-
-  if (toFetch.length > 0) {
-    // Twelve Data accepts up to ~120 symbols per batch request
-    const BATCH = 120;
-    for (let i = 0; i < toFetch.length; i += BATCH) {
-      const batch = toFetch.slice(i, i + BATCH);
-      const tdSyms = batch.map(toTD).join(',');
-
-      try {
-        const res = await fetch(`${BASE}/quote?symbol=${encodeURIComponent(tdSyms)}&apikey=${API_KEY}`);
-        if (!res.ok) continue;
-        const data: any = await res.json();
-
-        // Single symbol → object; multiple → { "SYM:XSAU": {...}, ... }
-        const isBatch = batch.length > 1;
-
-        for (const sym of batch) {
-          const tdKey = toTD(sym);
-          const q = isBatch ? data[tdKey] : data;
-          if (!q || q.status === 'error' || !q.close) continue;
-          const mapped = mapQuote(sym, q);
-          cache.set(sym, { data: mapped, ts: now });
-          results.push(mapped);
-        }
-      } catch { /* skip failed batch */ }
+    if (hit && now - hit.ts < TTL) {
+      results.push(hit.data);
+      return;
     }
-  }
+    const data = await fetchStooq(sym);
+    if (data) {
+      cache.set(sym, { data, ts: now });
+      results.push(data);
+    }
+  }));
 
   return {
     statusCode: 200,
