@@ -107,37 +107,33 @@ async function handleStockPrice(url) {
 
   const results = [];
 
-  await Promise.all(symbols.map(async (symbol) => {
-    const s = symbol.replace(/\.SR$/i, '.sa');
+  await Promise.all(symbols.slice(0, 50).map(async (symbol) => {
     try {
-      const res = await fetch(`https://stooq.com/q/l/?s=${s}&f=sd2t2ohlcv&h&e=csv`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-      });
+      const res = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+        { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+      );
       if (!res.ok) return;
-      const text  = await res.text();
-      const lines = text.trim().split('\n');
-      if (lines.length < 2) return;
-      const [, , , open, high, low, close, volume] = lines[1].split(',');
-      if (!close || close.trim() === 'N/D') return;
-      const closeN  = parseFloat(close);
-      const openN   = parseFloat(open);
-      const change  = closeN - openN;
+      const data = await res.json();
+      const q = data?.chart?.result?.[0];
+      if (!q) return;
+      const meta = q.meta;
+      const change = (meta.regularMarketPrice ?? 0) - (meta.previousClose ?? 0);
+      const changePct = meta.previousClose ? (change / meta.previousClose * 100) : 0;
       results.push({
         symbol,
-        regularMarketPrice:         closeN,
+        regularMarketPrice:         meta.regularMarketPrice ?? 0,
         regularMarketChange:        parseFloat(change.toFixed(2)),
-        regularMarketChangePercent: parseFloat((openN > 0 ? change / openN * 100 : 0).toFixed(2)),
-        regularMarketVolume:        parseInt(volume?.trim() ?? '0', 10),
-        averageDailyVolume10Day:    0,
-        regularMarketDayHigh:       parseFloat(high),
-        regularMarketDayLow:        parseFloat(low),
+        regularMarketChangePercent: parseFloat(changePct.toFixed(2)),
+        regularMarketVolume:        meta.regularMarketVolume ?? 0,
+        averageDailyVolume10Day:    meta.averageDailyVolume10Day ?? 0,
+        regularMarketDayHigh:       meta.regularMarketDayHigh ?? 0,
+        regularMarketDayLow:        meta.regularMarketDayLow ?? 0,
       });
     } catch { /* skip failed symbol */ }
   }));
 
-  return new Response(JSON.stringify({ success: true, result: results }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return json({ success: true, result: results });
 }
 
 // ─── Stock Chart ──────────────────────────────────────────────────────────────
