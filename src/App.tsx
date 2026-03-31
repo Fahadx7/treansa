@@ -2777,7 +2777,7 @@ function App() {
               </div>
             </div>
             <div className="text-[10px] text-app-text-muted font-mono">
-              {new Date(alert.time).toLocaleTimeString('ar-SA')}
+              {alert.time}
             </div>
           </div>
         </div>
