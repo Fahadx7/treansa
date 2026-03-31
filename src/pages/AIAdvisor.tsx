@@ -233,7 +233,7 @@ export default function AIAdvisor({ stocks = [], tasiData = null, commodities = 
     ];
 
     try {
-      const res = await fetch('/.netlify/functions/chat', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: apiMessages }),
@@ -299,7 +299,7 @@ export default function AIAdvisor({ stocks = [], tasiData = null, commodities = 
           </div>
           <div className="flex-1">
             <div className="font-bold text-white text-sm leading-tight">المستشار الذكي</div>
-            <div className="text-[10px]" style={{ color: '#4a9eff' }}>محلل سوق تداول · Claude Haiku</div>
+            <div className="text-[10px]" style={{ color: '#4a9eff' }}>محلل سوق تداول · Workers AI</div>
           </div>
           <span
             className="text-[10px] font-semibold px-2 py-1 rounded-full"

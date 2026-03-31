@@ -221,6 +221,343 @@ async function handleStockChart(url) {
   }
 }
 
+// ─── Server-side Technical Indicators ────────────────────────────────────────
+
+function calcRSI(closes, period = 14) {
+  if (closes.length <= period) return 50;
+  const g = [], l = [];
+  for (let i = 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    g.push(d > 0 ? d : 0);
+    l.push(d < 0 ? -d : 0);
+  }
+  let ag = g.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  let al = l.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < g.length; i++) {
+    ag = (ag * (period - 1) + g[i]) / period;
+    al = (al * (period - 1) + l[i]) / period;
+  }
+  return al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);
+}
+
+function calcMACD(closes) {
+  if (closes.length < 26) return { macd: 0, signal: 0, histogram: 0 };
+  const k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
+  let ema12 = closes.slice(0, 12).reduce((a, b) => a + b, 0) / 12;
+  let ema26 = closes.slice(0, 26).reduce((a, b) => a + b, 0) / 26;
+  for (let i = 12; i < 26; i++) ema12 = closes[i] * k12 + ema12 * (1 - k12);
+  const ms = [];
+  for (let i = 26; i < closes.length; i++) {
+    ema12 = closes[i] * k12 + ema12 * (1 - k12);
+    ema26 = closes[i] * k26 + ema26 * (1 - k26);
+    ms.push(ema12 - ema26);
+  }
+  if (!ms.length) return { macd: 0, signal: 0, histogram: 0 };
+  let sig = ms.slice(0, Math.min(9, ms.length)).reduce((a, b) => a + b, 0) / Math.min(9, ms.length);
+  for (let i = 9; i < ms.length; i++) sig = ms[i] * k9 + sig * (1 - k9);
+  const m = ms[ms.length - 1];
+  return { macd: +m.toFixed(4), signal: +sig.toFixed(4), histogram: +(m - sig).toFixed(4) };
+}
+
+function calcBB(closes, p = 20) {
+  if (closes.length < p) return { middle: 0, upper: 0, lower: 0 };
+  const last = closes.slice(-p);
+  const mid = last.reduce((a, b) => a + b, 0) / p;
+  const std = Math.sqrt(last.reduce((a, b) => a + (b - mid) ** 2, 0) / p);
+  return { middle: +mid.toFixed(2), upper: +(mid + 2 * std).toFixed(2), lower: +(mid - 2 * std).toFixed(2) };
+}
+
+function calcATR(highs, lows, closes, p = 14) {
+  if (highs.length < p + 1) return 0;
+  const trs = [];
+  for (let i = 1; i < highs.length; i++) {
+    trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
+  }
+  let a = trs.slice(0, p).reduce((s, v) => s + v, 0) / p;
+  for (let i = p; i < trs.length; i++) a = (a * (p - 1) + trs[i]) / p;
+  return +a.toFixed(4);
+}
+
+function calcStochRSI(closes, rsiP = 14, stochP = 14) {
+  if (closes.length < rsiP + stochP + 5) return { k: 50, d: 50 };
+  const series = [];
+  for (let i = rsiP; i <= closes.length; i++) series.push(calcRSI(closes.slice(0, i), rsiP));
+  if (series.length < stochP) return { k: 50, d: 50 };
+  const kSeries = [];
+  for (let i = stochP - 1; i < series.length; i++) {
+    const w = series.slice(i - stochP + 1, i + 1);
+    const mn = Math.min(...w), mx = Math.max(...w);
+    kSeries.push(mx === mn ? 50 : ((series[i] - mn) / (mx - mn)) * 100);
+  }
+  const k = kSeries[kSeries.length - 1];
+  const d = kSeries.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, kSeries.length);
+  return { k: +k.toFixed(2), d: +d.toFixed(2) };
+}
+
+function computeAllIndicators(quotes) {
+  const closes = quotes.map(q => q.close);
+  const highs = quotes.map(q => q.high ?? q.close);
+  const lows = quotes.map(q => q.low ?? q.close);
+  return {
+    rsi: calcRSI(closes),
+    macd: calcMACD(closes),
+    bb: calcBB(closes),
+    atr: calcATR(highs, lows, closes),
+    stochRsi: calcStochRSI(closes),
+  };
+}
+
+// ─── Technical Pattern Detection ─────────────────────────────────────────────
+
+function findPivots(prices, windowSize = 5) {
+  const pivots = [];
+  for (let i = windowSize; i < prices.length - windowSize; i++) {
+    const left = prices.slice(i - windowSize, i);
+    const right = prices.slice(i + 1, i + windowSize + 1);
+    if (prices[i] > Math.max(...left) && prices[i] > Math.max(...right))
+      pivots.push({ idx: i, type: 'high', price: prices[i] });
+    else if (prices[i] < Math.min(...left) && prices[i] < Math.min(...right))
+      pivots.push({ idx: i, type: 'low', price: prices[i] });
+  }
+  return pivots;
+}
+
+function detectSupportResistance(closes, highs, lows) {
+  const levels = [];
+  const pivots = findPivots(closes, 3);
+  const highPivots = pivots.filter(p => p.type === 'high').map(p => p.price);
+  const lowPivots = pivots.filter(p => p.type === 'low').map(p => p.price);
+  const currentPrice = closes[closes.length - 1];
+
+  // Cluster nearby pivots as support/resistance zones
+  const clusterZone = (prices, label) => {
+    if (!prices.length) return;
+    prices.sort((a, b) => a - b);
+    const threshold = currentPrice * 0.015; // 1.5% tolerance
+    let cluster = [prices[0]];
+    for (let i = 1; i < prices.length; i++) {
+      if (prices[i] - cluster[cluster.length - 1] < threshold) {
+        cluster.push(prices[i]);
+      } else {
+        const avg = cluster.reduce((a, b) => a + b, 0) / cluster.length;
+        levels.push({ type: label, price: +avg.toFixed(2), strength: cluster.length });
+        cluster = [prices[i]];
+      }
+    }
+    const avg = cluster.reduce((a, b) => a + b, 0) / cluster.length;
+    levels.push({ type: label, price: +avg.toFixed(2), strength: cluster.length });
+  };
+
+  clusterZone(highPivots, 'resistance');
+  clusterZone(lowPivots, 'support');
+
+  // Sort by proximity to current price
+  return levels
+    .filter(l => Math.abs(l.price - currentPrice) / currentPrice < 0.10)
+    .sort((a, b) => Math.abs(a.price - currentPrice) - Math.abs(b.price - currentPrice))
+    .slice(0, 6);
+}
+
+function detectTrendlines(closes) {
+  const n = closes.length;
+  if (n < 20) return { trend: 'غير محدد', slope: 0 };
+  const recent = closes.slice(-20);
+  // Simple linear regression
+  const xMean = 9.5, yMean = recent.reduce((a, b) => a + b, 0) / 20;
+  let num = 0, den = 0;
+  for (let i = 0; i < 20; i++) {
+    num += (i - xMean) * (recent[i] - yMean);
+    den += (i - xMean) ** 2;
+  }
+  const slope = num / den;
+  const slopePct = (slope / yMean) * 100;
+  let trend;
+  if (slopePct > 0.3) trend = 'صاعد';
+  else if (slopePct < -0.3) trend = 'هابط';
+  else trend = 'عرضي';
+  return { trend, slope: +slopePct.toFixed(3) };
+}
+
+function detectCupAndHandle(closes) {
+  if (closes.length < 30) return null;
+  const recent = closes.slice(-60);
+  if (recent.length < 30) return null;
+
+  const pivots = findPivots(recent, 3);
+  const highPivots = pivots.filter(p => p.type === 'high');
+  const lowPivots = pivots.filter(p => p.type === 'low');
+
+  if (highPivots.length < 2 || lowPivots.length < 1) return null;
+
+  // Look for U-shape: high → low → high (cup), then minor dip (handle)
+  for (let i = 0; i < highPivots.length - 1; i++) {
+    const leftRim = highPivots[i];
+    const rightRim = highPivots[i + 1];
+    const cupBottom = lowPivots.find(l => l.idx > leftRim.idx && l.idx < rightRim.idx);
+    if (!cupBottom) continue;
+
+    const rimDiff = Math.abs(leftRim.price - rightRim.price) / leftRim.price;
+    const cupDepth = (leftRim.price - cupBottom.price) / leftRim.price;
+
+    if (rimDiff < 0.05 && cupDepth > 0.05 && cupDepth < 0.35) {
+      const currentPrice = closes[closes.length - 1];
+      const nearRim = Math.abs(currentPrice - rightRim.price) / rightRim.price < 0.03;
+      return {
+        detected: true,
+        rimLevel: +((leftRim.price + rightRim.price) / 2).toFixed(2),
+        cupDepth: +(cupDepth * 100).toFixed(1),
+        breakoutPending: nearRim || currentPrice > rightRim.price,
+      };
+    }
+  }
+  return null;
+}
+
+function detectDoublePattern(closes) {
+  if (closes.length < 20) return null;
+  const pivots = findPivots(closes.slice(-40), 3);
+  const highPivots = pivots.filter(p => p.type === 'high');
+  const lowPivots = pivots.filter(p => p.type === 'low');
+
+  // Double Top
+  if (highPivots.length >= 2) {
+    const [h1, h2] = highPivots.slice(-2);
+    const diff = Math.abs(h1.price - h2.price) / h1.price;
+    if (diff < 0.02 && h2.idx > h1.idx + 3) {
+      return { pattern: 'قمة مزدوجة', level: +((h1.price + h2.price) / 2).toFixed(2), bearish: true };
+    }
+  }
+
+  // Double Bottom
+  if (lowPivots.length >= 2) {
+    const [l1, l2] = lowPivots.slice(-2);
+    const diff = Math.abs(l1.price - l2.price) / l1.price;
+    if (diff < 0.02 && l2.idx > l1.idx + 3) {
+      return { pattern: 'قاع مزدوج', level: +((l1.price + l2.price) / 2).toFixed(2), bearish: false };
+    }
+  }
+  return null;
+}
+
+function detectAllPatterns(quotes) {
+  const closes = quotes.map(q => q.close);
+  const highs = quotes.map(q => q.high ?? q.close);
+  const lows = quotes.map(q => q.low ?? q.close);
+
+  const trendInfo = detectTrendlines(closes);
+  const supportResistance = detectSupportResistance(closes, highs, lows);
+  const cupHandle = detectCupAndHandle(closes);
+  const doublePattern = detectDoublePattern(closes);
+
+  const patterns = [];
+
+  if (trendInfo.trend !== 'غير محدد') {
+    patterns.push(`الاتجاه العام: ${trendInfo.trend} (ميل ${trendInfo.slope}%)`);
+  }
+
+  if (cupHandle?.detected) {
+    patterns.push(`نموذج كوب وعروة - مستوى الحافة: ${cupHandle.rimLevel} | عمق الكوب: ${cupHandle.cupDepth}%${cupHandle.breakoutPending ? ' | اختراق وشيك!' : ''}`);
+  }
+
+  if (doublePattern) {
+    patterns.push(`${doublePattern.pattern} عند مستوى ${doublePattern.level} (${doublePattern.bearish ? 'سلبي' : 'إيجابي'})`);
+  }
+
+  const supports = supportResistance.filter(l => l.type === 'support');
+  const resistances = supportResistance.filter(l => l.type === 'resistance');
+  if (supports.length) patterns.push(`الدعم: ${supports.map(s => s.price).join(' / ')}`);
+  if (resistances.length) patterns.push(`المقاومة: ${resistances.map(r => r.price).join(' / ')}`);
+
+  return {
+    trend: trendInfo,
+    supportResistance,
+    cupHandle,
+    doublePattern,
+    summary: patterns.join('\n'),
+  };
+}
+
+// ─── Fetch chart + compute indicators server-side ────────────────────────────
+
+async function fetchAndEnrich(symbol) {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`,
+      { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result || !result.timestamp) return null;
+
+    const ts = result.timestamp;
+    const q = result.indicators?.quote?.[0] ?? {};
+    const quotes = ts.map((t, i) => ({
+      close: q.close?.[i] ?? 0,
+      high: q.high?.[i] ?? 0,
+      low: q.low?.[i] ?? 0,
+      volume: q.volume?.[i] ?? 0,
+    })).filter(x => x.close > 0);
+
+    if (quotes.length < 20) return null;
+
+    const indicators = computeAllIndicators(quotes);
+    const patterns = detectAllPatterns(quotes);
+
+    return { indicators, patterns };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Psychology-aware sentiment scoring ──────────────────────────────────────
+
+function analyzePsychology(rsi, volumeRatio, macdHist) {
+  // RSI sentiment (35% weight)
+  let rsiSentiment = 50;
+  if (rsi < 20) rsiSentiment = 10;
+  else if (rsi < 30) rsiSentiment = 25;
+  else if (rsi < 45) rsiSentiment = 40;
+  else if (rsi < 55) rsiSentiment = 50;
+  else if (rsi < 70) rsiSentiment = 65;
+  else if (rsi < 80) rsiSentiment = 80;
+  else rsiSentiment = 95;
+
+  // Volume sentiment (40% weight)
+  let volSentiment = 50;
+  if (volumeRatio > 3) volSentiment = 90;
+  else if (volumeRatio > 2) volSentiment = 75;
+  else if (volumeRatio > 1.5) volSentiment = 65;
+  else if (volumeRatio > 0.7) volSentiment = 50;
+  else volSentiment = 30;
+
+  // MACD sentiment (25% weight)
+  let macdSentiment = 50;
+  if (macdHist > 0.5) macdSentiment = 80;
+  else if (macdHist > 0) macdSentiment = 60;
+  else if (macdHist > -0.5) macdSentiment = 40;
+  else macdSentiment = 20;
+
+  const composite = rsiSentiment * 0.35 + volSentiment * 0.40 + macdSentiment * 0.25;
+
+  // Detect biases
+  const biases = [];
+  if (rsi > 75 && volumeRatio > 2) biases.push('FOMO (خوف من فوات الفرصة)');
+  if (rsi < 25 && volumeRatio > 2.5) biases.push('بيع ذعري');
+  if (volumeRatio > 3 && rsi > 50 && rsi < 70) biases.push('سلوك القطيع');
+  if (rsi > 80) biases.push('ثقة مفرطة');
+  if (rsi < 20 && volumeRatio < 0.5) biases.push('نفور من الخسارة');
+
+  let label;
+  if (composite > 75) label = 'طمع شديد';
+  else if (composite > 60) label = 'تفاؤل';
+  else if (composite > 45) label = 'محايد';
+  else if (composite > 30) label = 'خوف';
+  else label = 'خوف شديد';
+
+  return { score: +composite.toFixed(1), label, biases };
+}
+
 // ─── AI helper (Cloudflare Workers AI — free, no external key) ──────────────
 
 const CF_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -239,42 +576,117 @@ async function callAI(env, prompt) {
   return res.response ?? '';
 }
 
-// ─── Multi-Agent Analysis ────────────────────────────────────────────────────
+async function callAIChat(env, messages) {
+  const ai = env.AI;
+  if (!ai) throw new Error('Workers AI غير مفعّل');
+  const res = await ai.run(CF_MODEL, {
+    messages: [
+      { role: 'system', content: `أنت "المستشار الذكي" — محلل مالي خبير متخصص في السوق السعودي (تاسي).
+قواعدك:
+- أجب دائماً بالعربية بشكل مهني ومختصر
+- استخدم البيانات المقدمة لتحليل الأسهم
+- قدم توصيات واضحة (شراء/بيع/انتظار) مع أسباب
+- اذكر مستويات الدعم والمقاومة والأهداف السعرية
+- حذّر من المخاطر دائماً
+- لا تقدم نصائح استثمارية مباشرة، وضّح أن التحليل للأغراض التعليمية` },
+      ...messages,
+    ],
+    max_tokens: 1024,
+    temperature: 0.7,
+  });
+  return res.response ?? '';
+}
+
+// ─── Chat endpoint (for AI Advisor) ─────────────────────────────────────────
+
+async function handleChat(request, env) {
+  try {
+    const body = await request.json();
+    const messages = body.messages ?? [];
+    if (!messages.length) return json({ success: false, error: 'لا توجد رسائل' }, 400);
+
+    // Keep last 10 messages to stay within context limits
+    const trimmed = messages.slice(-10).map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: String(m.content).slice(0, 2000),
+    }));
+
+    const reply = await callAIChat(env, trimmed);
+    return json({ success: true, reply });
+  } catch (e) {
+    return json({ success: false, error: e.message || 'فشل الاتصال بالمستشار' }, 500);
+  }
+}
+
+// ─── Multi-Agent Analysis (with server-side enrichment) ─────────────────────
 
 async function handleMultiAgent(request, env) {
   try {
     const body = await request.json();
-    const { symbol, companyName, price, change, rsi, wave, macd, bb, atr, stochRsi, volumeRatio } = body;
+    const { symbol, companyName, price, change, volumeRatio } = body;
     if (!symbol) return json({ success: false, error: 'رمز السهم مطلوب' }, 400);
+
+    // Always fetch chart data server-side and compute indicators + patterns
+    const enrichment = await fetchAndEnrich(symbol);
+    const rsi = enrichment?.indicators?.rsi ?? body.rsi ?? 'N/A';
+    const macd = enrichment?.indicators?.macd ?? body.macd ?? {};
+    const bb = enrichment?.indicators?.bb ?? body.bb ?? {};
+    const atr = enrichment?.indicators?.atr ?? body.atr ?? 'N/A';
+    const stochRsi = enrichment?.indicators?.stochRsi ?? body.stochRsi ?? {};
+    const patterns = enrichment?.patterns ?? null;
+    const wave = body.wave ?? 'غير محدد';
+
+    // Psychology analysis
+    const psych = analyzePsychology(
+      typeof rsi === 'number' ? rsi : 50,
+      volumeRatio ?? 1,
+      macd?.histogram ?? 0,
+    );
 
     const stockCtx = `الشركة: ${companyName} (${symbol})
 السعر: ${price} ر.س | التغير: ${change ?? 0}%
-RSI(14): ${rsi ?? 'N/A'} | StochRSI: K=${stochRsi?.k ?? 'N/A'} D=${stochRsi?.d ?? 'N/A'}
+RSI(14): ${rsi} | StochRSI: K=${stochRsi?.k ?? 'N/A'} D=${stochRsi?.d ?? 'N/A'}
 MACD: ${macd?.macd ?? 'N/A'} | Signal: ${macd?.signal ?? 'N/A'} | Hist: ${macd?.histogram ?? 'N/A'}
-Bollinger: Upper=${bb?.upper ?? 'N/A'} | Lower=${bb?.lower ?? 'N/A'}
-ATR(14): ${atr ?? 'N/A'} | موجة إليوت: ${wave ?? 'غير محدد'} | نسبة الحجم: ${volumeRatio ?? 'N/A'}x`;
+Bollinger: Upper=${bb?.upper ?? 'N/A'} | Middle=${bb?.middle ?? 'N/A'} | Lower=${bb?.lower ?? 'N/A'}
+ATR(14): ${atr} | موجة إليوت: ${wave} | نسبة الحجم: ${volumeRatio ?? 'N/A'}x
+${patterns?.summary ? `\nالأنماط الفنية المكتشفة:\n${patterns.summary}` : ''}
+\nالتحليل النفسي: المعنويات ${psych.label} (${psych.score}/100)${psych.biases.length ? ` | تحيزات: ${psych.biases.join('، ')}` : ''}`;
 
     // Run 4 specialist agents in parallel, then synthesize
     const [technical, fundamental, sentiment, risk] = await Promise.all([
-      callAI(env,`أنت محلل فني خبير في السوق السعودي. حلل البيانات التالية وقدم تحليلاً فنياً مختصراً (3-5 نقاط):
+      callAI(env, `أنت محلل فني خبير في السوق السعودي. حلل البيانات التالية وقدم تحليلاً فنياً مختصراً (3-5 نقاط):
 ${stockCtx}
-ركز على: اتجاه RSI/MACD، مستويات الدعم والمقاومة، موجة إليوت، إشارات الدخول/الخروج.`),
+ركز على:
+- اتجاه RSI/MACD/StochRSI وإشارات التقاطع
+- مستويات الدعم والمقاومة المكتشفة
+- الأنماط الفنية (كوب وعروة، قمة/قاع مزدوج، ترند)
+- موجة إليوت والمرحلة الحالية
+- إشارات الدخول/الخروج بناءً على ATR وBollinger`),
 
-      callAI(env,`أنت محلل أساسي خبير في السوق السعودي. قدم تحليلاً أساسياً مختصراً (3-5 نقاط) لـ:
+      callAI(env, `أنت محلل أساسي خبير في السوق السعودي. قدم تحليلاً أساسياً مختصراً (3-5 نقاط) لـ:
 ${stockCtx}
 ركز على: القطاع، النمو المتوقع، العوامل الاقتصادية المؤثرة، مقارنة بالقطاع.`),
 
-      callAI(env,`أنت محلل معنويات السوق السعودي. حلل المعنويات المحيطة بـ:
+      callAI(env, `أنت محلل معنويات ونفسية السوق السعودي. حلل المعنويات والتحيزات النفسية المحيطة بـ:
 ${stockCtx}
-ركز على: اتجاه السوق العام، حجم التداول مقارنة بالمتوسط، ضغط البيع/الشراء، ثقة المستثمرين.`),
+ركز على:
+- مستوى المعنويات الحالي ودرجة الطمع/الخوف
+- التحيزات النفسية المكتشفة وتأثيرها على القرار
+- حجم التداول مقارنة بالمتوسط ودلالته
+- ضغط البيع/الشراء ومناطق التجميع/التصريف`),
 
-      callAI(env,`أنت خبير إدارة مخاطر في السوق السعودي. قيّم المخاطر لـ:
+      callAI(env, `أنت خبير إدارة مخاطر في السوق السعودي. قيّم المخاطر لـ:
 ${stockCtx}
-ركز على: نسبة المخاطرة/العائد، وقف الخسارة المقترح (بناءً على ATR)، حجم المركز المناسب، مخاطر القطاع.`),
+ركز على:
+- وقف الخسارة المقترح بناءً على ATR (السعر - 2×ATR للشراء)
+- حجم المركز المناسب (لا يتجاوز 2% مخاطرة من المحفظة)
+- نسبة المخاطرة/العائد لكل هدف
+- مخاطر القطاع والسوق
+- تأثير التحيزات النفسية على إدارة المخاطر`),
     ]);
 
-    // Synthesis
-    const synthesis = await callAI(env,`أنت كبير المحللين في السوق السعودي. لديك تقارير 4 محللين:
+    // Synthesis with full context
+    const synthesis = await callAI(env, `أنت كبير المحللين في السوق السعودي. لديك تقارير 4 محللين + تحليل نفسي:
 
 📊 التحليل الفني: ${technical.slice(0, 500)}
 📈 التحليل الأساسي: ${fundamental.slice(0, 500)}
@@ -282,18 +694,29 @@ ${stockCtx}
 ⚠️ إدارة المخاطر: ${risk.slice(0, 500)}
 
 السهم: ${companyName} (${symbol}) بسعر ${price} ر.س
+ATR(14): ${atr}
+${patterns?.summary ? `الأنماط: ${patterns.summary.slice(0, 200)}` : ''}
+المعنويات: ${psych.label} (${psych.score}/100)
 
 قدم ملخصاً تنفيذياً نهائياً يتضمن:
-1. التوصية النهائية (شراء/بيع/انتظار) مع نسبة الثقة
+1. التوصية النهائية (شراء قوي / شراء / انتظار / بيع / بيع قوي) مع نسبة الثقة
 2. نقطة الدخول المثالية
-3. الهدف الأول والثاني
-4. وقف الخسارة
-5. الاستراتيجية المقترحة
+3. الهدف الأول والثاني (بناءً على مستويات المقاومة وATR)
+4. وقف الخسارة (بناءً على ATR: السعر - 2×ATR)
+5. نسبة المخاطرة/العائد
+6. الأنماط الفنية المؤثرة على القرار
+7. تحذير نفسي (إن وُجدت تحيزات)
+8. الاستراتيجية المقترحة
 اجعل الرد مختصراً ومهنياً.`);
 
     return json({
       success: true,
       agents: { technical, fundamental, sentiment, risk, synthesis },
+      enrichment: {
+        indicators: enrichment?.indicators ?? null,
+        patterns: patterns ? { trend: patterns.trend, supportResistance: patterns.supportResistance, cupHandle: patterns.cupHandle, doublePattern: patterns.doublePattern } : null,
+        psychology: psych,
+      },
     });
   } catch (e) {
     return json({ success: false, error: e.message || 'فشل التحليل' }, 500);
@@ -355,34 +778,47 @@ async function handleScenario(request, env) {
   }
 }
 
-// ─── AI Analysis (single stock) ──────────────────────────────────────────────
+// ─── AI Analysis (single stock — with server-side enrichment) ────────────────
 
 async function handleAiAnalysis(request, env) {
   try {
-    const { symbol, companyName, price, change, rsi, wave, macd, bb, atr, stochRsi: stoch } = await request.json();
+    const body = await request.json();
+    const { symbol, companyName, price, change, volumeRatio, wave } = body;
     if (!symbol) return json({ success: false, error: 'رمز السهم غير صالح' }, 400);
+
+    // Server-side enrichment
+    const enrichment = await fetchAndEnrich(symbol);
+    const rsi = enrichment?.indicators?.rsi ?? body.rsi ?? 'N/A';
+    const macd = enrichment?.indicators?.macd ?? body.macd ?? {};
+    const bb = enrichment?.indicators?.bb ?? body.bb ?? {};
+    const atr = enrichment?.indicators?.atr ?? body.atr ?? 'N/A';
+    const stoch = enrichment?.indicators?.stochRsi ?? body.stochRsi ?? {};
+    const patterns = enrichment?.patterns ?? null;
 
     const prompt = `أنت خبير مالي ومحلل فني محترف في السوق السعودي (تاسي).
 قم بتحليل السهم التالي بناءً على البيانات المقدمة وقدم توصية احترافية باللغة العربية.
 الشركة: ${companyName} (${symbol})
 السعر الحالي: ${price}
 التغير اليومي: ${change ?? 0}%
-RSI (14): ${rsi ?? 'N/A'}
+RSI (14): ${rsi}
 Stochastic RSI: K=${stoch?.k ?? 'N/A'} | D=${stoch?.d ?? 'N/A'}
 موجة إليوت: ${wave || 'غير محدد'}
-MACD Histogram: ${macd?.histogram ?? 'N/A'}
-Bollinger Bands: Upper=${bb?.upper ?? 'N/A'} | Lower=${bb?.lower ?? 'N/A'}
-ATR (14): ${atr ?? 'N/A'}
+MACD: ${macd?.macd ?? 'N/A'} | Signal: ${macd?.signal ?? 'N/A'} | Hist: ${macd?.histogram ?? 'N/A'}
+Bollinger Bands: Upper=${bb?.upper ?? 'N/A'} | Middle=${bb?.middle ?? 'N/A'} | Lower=${bb?.lower ?? 'N/A'}
+ATR (14): ${atr}
+نسبة الحجم: ${volumeRatio ?? 'N/A'}x
+${patterns?.summary ? `\nالأنماط الفنية:\n${patterns.summary}` : ''}
 
 يرجى التركيز على:
 1. الاتجاه المتوقع (صاعد/هابط/عرضي) مع مستوى الثقة.
-2. نقاط الدخول المثالية بناءً على المؤشرات.
-3. الأهداف السعرية المتوقعة (الأول والثاني).
-4. مستوى وقف الخسارة المقترح بناءً على ATR.
-5. نصيحة إدارة المخاطر للمتداول.
+2. نقاط الدخول المثالية بناءً على المؤشرات والأنماط.
+3. الأهداف السعرية (الأول والثاني) بناءً على مستويات المقاومة وATR.
+4. وقف الخسارة المقترح (السعر - 2×ATR).
+5. الأنماط الفنية المكتشفة وتأثيرها.
+6. نصيحة إدارة المخاطر.
 اجعل التحليل مختصراً، مهنياً، ومباشراً.`;
 
-    const analysis = await callAI(env,prompt);
+    const analysis = await callAI(env, prompt);
     return json({ success: true, analysis });
   } catch (e) {
     return json({ success: false, error: 'فشل تحليل الذكاء الاصطناعي' }, 500);
@@ -429,8 +865,9 @@ export default {
     if (url.pathname.startsWith('/api/stock-price'))      return handleStockPrice(url);
     if (url.pathname.startsWith('/api/stock-chart'))      return handleStockChart(url);
 
-    // POST endpoints (Gemini AI)
+    // POST endpoints (Cloudflare Workers AI)
     if (request.method === 'POST') {
+      if (url.pathname === '/api/chat')         return handleChat(request, env);
       if (url.pathname === '/api/multi-agent')  return handleMultiAgent(request, env);
       if (url.pathname === '/api/scenario')     return handleScenario(request, env);
       if (url.pathname === '/api/ai-analysis')  return handleAiAnalysis(request, env);
