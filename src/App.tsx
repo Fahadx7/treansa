@@ -43,7 +43,7 @@ import IntelligenceEngine from './pages/IntelligenceEngine';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
-import { List } from 'react-window';
+import { FixedSizeList } from 'react-window';
 const AutoSizer = ({ children }: { children: (size: { width: number; height: number }) => React.ReactNode }) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
@@ -3479,7 +3479,7 @@ function App() {
                       }
 
                       return (
-                        <List
+                        <FixedSizeList
                           height={height}
                           itemCount={dataToDisplay.length}
                           itemSize={60}
@@ -3524,7 +3524,7 @@ function App() {
                               </div>
                             );
                           }}
-                        </List>
+                        </FixedSizeList>
                       );
                     }}
                   </AutoSizer>
@@ -3575,7 +3575,7 @@ function App() {
              <div className="bg-app-surface/50 border border-app-border rounded-2xl overflow-hidden flex-1 min-h-[500px] relative">
                <AutoSizer>
                  {({ height, width }: any) => (
-                   <List
+                   <FixedSizeList
                      height={height}
                      itemCount={status?.alerts.length || 0}
                      itemSize={90}
@@ -3584,7 +3584,7 @@ function App() {
                      className="custom-scrollbar"
                    >
                      {AlertRow}
-                   </List>
+                   </FixedSizeList>
                  )}
                </AutoSizer>
                {status?.alerts.length === 0 && (

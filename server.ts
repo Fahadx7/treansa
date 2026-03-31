@@ -1028,6 +1028,148 @@ async function startServer() {
         res.json({ status: "ok" });
     });
 
+    // ========= Twelve Data proxy routes (mirrors Netlify functions for local dev) =========
+    const TD_BASE    = 'https://api.twelvedata.com';
+    const TD_API_KEY = process.env.TWELVE_DATA_API_KEY ?? '';
+
+    const tdQuoteCache   = new Map<string, { data: any; ts: number }>();
+    const tdChartCache   = new Map<string, { data: any; ts: number }>();
+    const TD_TTL         = 5 * 60 * 1000;
+
+    function toTD(sym: string): string {
+        return sym.replace(/\.SR$/i, '') + ':XSAU';
+    }
+
+    function mapQuote(sym: string, q: any): any {
+        return {
+            symbol:                     sym,
+            shortName:                  q.name ?? sym,
+            regularMarketPrice:         parseFloat(q.close              ?? '0'),
+            regularMarketChange:        parseFloat(q.change             ?? '0'),
+            regularMarketChangePercent: parseFloat(q.percent_change     ?? '0'),
+            regularMarketVolume:        parseInt(q.volume               ?? '0', 10),
+            averageDailyVolume3Month:   parseInt(q.average_volume       ?? '0', 10),
+            fiftyTwoWeekHigh:           parseFloat(q.fifty_two_week?.high ?? q.close ?? '0'),
+            fiftyTwoWeekLow:            parseFloat(q.fifty_two_week?.low  ?? q.close ?? '0'),
+            regularMarketDayHigh:       parseFloat(q.high               ?? q.close ?? '0'),
+            regularMarketDayLow:        parseFloat(q.low                ?? q.close ?? '0'),
+        };
+    }
+
+    app.get('/api/stock-price', async (req, res) => {
+        const raw = (req.query.symbols as string) ?? '';
+        const symbols = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (!symbols.length) {
+            return res.status(400).json({ success: false, error: 'symbols required' });
+        }
+
+        const now = Date.now();
+        const results: any[] = [];
+        const toFetch: string[] = [];
+
+        for (const sym of symbols) {
+            const hit = tdQuoteCache.get(sym);
+            if (hit && now - hit.ts < TD_TTL) results.push(hit.data);
+            else toFetch.push(sym);
+        }
+
+        const BATCH = 120;
+        for (let i = 0; i < toFetch.length; i += BATCH) {
+            const batch = toFetch.slice(i, i + BATCH);
+            const tdSyms = batch.map(toTD).join(',');
+            try {
+                const r = await fetch(`${TD_BASE}/quote?symbol=${encodeURIComponent(tdSyms)}&apikey=${TD_API_KEY}`);
+                if (!r.ok) continue;
+                const data: any = await r.json();
+                const isBatch = batch.length > 1;
+                for (const sym of batch) {
+                    const q = isBatch ? data[toTD(sym)] : data;
+                    if (!q || q.status === 'error' || !q.close) continue;
+                    const mapped = mapQuote(sym, q);
+                    tdQuoteCache.set(sym, { data: mapped, ts: now });
+                    results.push(mapped);
+                }
+            } catch { /* skip failed batch */ }
+        }
+
+        res.json({ success: true, result: results });
+    });
+
+    app.get('/api/stock-chart', async (req, res) => {
+        const symbol = (req.query.symbol as string) ?? '';
+        const range  = (req.query.range as string) ?? '1mo';
+        if (!symbol) return res.status(400).json({ success: false, error: 'symbol required' });
+
+        const cacheKey = `${symbol}_${range}`;
+        const hit = tdChartCache.get(cacheKey);
+        if (hit && Date.now() - hit.ts < TD_TTL) return res.json(hit.data);
+
+        const RANGE_MAP: Record<string, { interval: string; outputsize: number }> = {
+            '1d':  { interval: '5min',   outputsize: 78  },
+            '1w':  { interval: '1h',     outputsize: 168 },
+            '1mo': { interval: '1day',   outputsize: 30  },
+            '6mo': { interval: '1day',   outputsize: 180 },
+            '1y':  { interval: '1week',  outputsize: 52  },
+            '5y':  { interval: '1month', outputsize: 60  },
+        };
+        const cfg = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
+        const tdSym = symbol.replace(/\.SR$/i, '') + ':XSAU';
+
+        try {
+            const url = `${TD_BASE}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${cfg.interval}&outputsize=${cfg.outputsize}&apikey=${TD_API_KEY}`;
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const data: any = await r.json();
+            if (data.status === 'error') throw new Error(data.message ?? 'Twelve Data error');
+
+            const quotes = (data.values ?? [])
+                .reverse()
+                .map((v: any) => ({
+                    date:   new Date(v.datetime).toISOString(),
+                    open:   parseFloat(v.open   ?? '0'),
+                    high:   parseFloat(v.high   ?? '0'),
+                    low:    parseFloat(v.low    ?? '0'),
+                    close:  parseFloat(v.close  ?? '0'),
+                    volume: parseInt(v.volume   ?? '0', 10),
+                }))
+                .filter((q: any) => q.close > 0);
+
+            const result = { success: true, meta: data.meta ?? {}, quotes };
+            tdChartCache.set(cacheKey, { data: result, ts: Date.now() });
+            res.json(result);
+        } catch (e: any) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    let tasiCache: { data: any; ts: number } | null = null;
+
+    app.get('/api/tasi-index', async (_req, res) => {
+        if (tasiCache && Date.now() - tasiCache.ts < TD_TTL) return res.json(tasiCache.data);
+        try {
+            const r = await fetch(`${TD_BASE}/quote?symbol=TASI:XSAU&apikey=${TD_API_KEY}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const q: any = await r.json();
+            if (q.status === 'error' || !q.close) throw new Error(q.message || 'No TASI data');
+            const price = parseFloat(q.close);
+            if (price < 1000) throw new Error(`Unexpected TASI price: ${price}`);
+            const result = {
+                success:       true,
+                price,
+                change:        parseFloat(q.change        ?? '0'),
+                changePercent: parseFloat(q.percent_change ?? '0'),
+                high:          parseFloat(q.high           ?? q.close),
+                low:           parseFloat(q.low            ?? q.close),
+                volume:        parseInt(q.volume           ?? '0', 10),
+                time:          new Date().toISOString(),
+            };
+            tasiCache = { data: result, ts: Date.now() };
+            res.json(result);
+        } catch (e: any) {
+            res.status(503).json({ success: false, error: e.message });
+        }
+    });
+
     // ========= AI Analysis endpoint (Gemini يعمل من الـ Backend - المفتاح لا يصل للمتصفح) =========
     app.post("/api/ai-analysis", async (req, res) => {
         const ip = req.ip || req.socket.remoteAddress || 'unknown';
