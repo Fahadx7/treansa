@@ -36,14 +36,17 @@ import {
   Moon,
   Newspaper,
   Search,
-  List as ListIcon
+  List as ListIcon,
+  Maximize2,
+  Minimize2,
+  X
 } from 'lucide-react';
 import AIAdvisor from './pages/AIAdvisor';
 import IntelligenceEngine from './pages/IntelligenceEngine';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
-import { FixedSizeList } from 'react-window';
+import { List as FixedSizeList } from 'react-window';
 const AutoSizer = ({ children }: { children: (size: { width: number; height: number }) => React.ReactNode }) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
@@ -65,8 +68,9 @@ import {
   ResponsiveContainer, 
   AreaChart, 
   Area, 
-  BarChart, 
+  BarChart,
   Bar,
+  Cell,
   ReferenceLine
 } from 'recharts';
 
@@ -546,6 +550,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [liveIndicators, setLiveIndicators] = useState<ReturnType<typeof computeIndicators> | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // AI Analyst States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -719,6 +724,72 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   };
 
   return (
+    <>
+    {isFullscreen && (
+      <div className="fixed inset-0 z-[200] bg-[#0d1e3a] flex flex-col" style={{ direction: 'rtl' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-app-border" style={{ background: '#112240' }}>
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-bold text-app-text">{stock.companyName}</span>
+            <span className="text-sm text-app-text-muted font-mono">{stock.symbol}</span>
+            <span className="text-lg font-mono font-bold text-app-text">{stock.price.toFixed(2)} ر.س</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              {([
+                { id: '1d',  label: 'يوم'    },
+                { id: '1w',  label: 'أسبوع'  },
+                { id: '1mo', label: 'شهر'    },
+                { id: '6mo', label: '6 أشهر' },
+                { id: '1y',  label: 'سنة'    },
+                { id: '5y',  label: '5 سنوات'},
+              ] as { id: ChartRange; label: string }[]).map(p => (
+                <button key={p.id} onClick={() => setChartPeriod(p.id)} style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', transition: 'all 0.15s ease', background: chartPeriod === p.id ? '#00d4aa' : 'transparent', color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)', fontFamily: 'inherit' }}>{p.label}</button>
+              ))}
+            </div>
+            <button onClick={() => setIsFullscreen(false)} className="btn-icon" style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)' }}>
+              <Minimize2 className="w-4 h-4 text-app-text-muted" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+          <div className="flex-[3] min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={history}>
+                <defs>
+                  <linearGradient id="fsColorPrice" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                <XAxis dataKey="time" stroke="rgba(255,255,255,0.3)" fontSize={11} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} tickLine={false} axisLine={false} domain={['auto','auto']} orientation="right" />
+                <Tooltip contentStyle={{ backgroundColor: '#112240', border: '1px solid rgba(255,255,255,0.1)', fontSize: '12px', color: '#e2e8f0' }} />
+                <Area type="monotone" dataKey="price" stroke="#10b981" fillOpacity={1} fill="url(#fsColorPrice)" strokeWidth={2} />
+                <Line type="monotone" dataKey="bbUpper" stroke="#3b82f6" strokeDasharray="5 5" dot={false} strokeWidth={1} opacity={0.5} />
+                <Line type="monotone" dataKey="bbLower" stroke="#3b82f6" strokeDasharray="5 5" dot={false} strokeWidth={1} opacity={0.5} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={history}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                <XAxis dataKey="time" hide />
+                <YAxis hide domain={['auto','auto']} />
+                <Tooltip contentStyle={{ backgroundColor: '#112240', border: '1px solid rgba(255,255,255,0.1)', fontSize: '12px', color: '#e2e8f0' }} />
+                <Bar dataKey="histogram">
+                  {history.map((entry, idx) => <Cell key={idx} fill={entry.histogram >= 0 ? '#10b981' : '#ef4444'} opacity={0.85} />)}
+                </Bar>
+                <Line type="monotone" dataKey="macd" stroke="#3b82f6" dot={false} strokeWidth={1.5} />
+                <Line type="monotone" dataKey="signal" stroke="#f59e0b" dot={false} strokeWidth={1.5} />
+                <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    )}
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -867,35 +938,45 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                         <TrendingUp className="w-4 h-4 text-emerald-500" />
                         الرسم البياني والمؤشرات
                       </h3>
-                      {/* Period pill tabs */}
-                      <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                        {([
-                          { id: '1d',  label: 'يوم'    },
-                          { id: '1w',  label: 'أسبوع'  },
-                          { id: '1mo', label: 'شهر'    },
-                          { id: '6mo', label: '6 أشهر' },
-                          { id: '1y',  label: 'سنة'    },
-                          { id: '5y',  label: '5 سنوات'},
-                        ] as { id: ChartRange; label: string }[]).map(p => (
-                          <button
-                            key={p.id}
-                            onClick={() => setChartPeriod(p.id)}
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 8,
-                              border: 'none',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease',
-                              background: chartPeriod === p.id ? '#00d4aa' : 'transparent',
-                              color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
+                      {/* Period pill tabs + fullscreen */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                          {([
+                            { id: '1d',  label: 'يوم'    },
+                            { id: '1w',  label: 'أسبوع'  },
+                            { id: '1mo', label: 'شهر'    },
+                            { id: '6mo', label: '6 أشهر' },
+                            { id: '1y',  label: 'سنة'    },
+                            { id: '5y',  label: '5 سنوات'},
+                          ] as { id: ChartRange; label: string }[]).map(p => (
+                            <button
+                              key={p.id}
+                              onClick={() => setChartPeriod(p.id)}
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 8,
+                                border: 'none',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                background: chartPeriod === p.id ? '#00d4aa' : 'transparent',
+                                color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setIsFullscreen(true)}
+                          className="btn-icon"
+                          title="تكبير الرسم البياني"
+                          style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                        </button>
                       </div>
                     </div>
 
@@ -1535,6 +1616,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </>
   );
 };
 
@@ -2132,6 +2214,149 @@ function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: b
   );
 }
 
+const TASIChartModal = ({ onClose, tasiData }: { onClose: () => void; tasiData: TASIData | null }) => {
+  const [period, setPeriod] = useState<ChartRange>('1mo');
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetchChart('^TASI', period)
+      .then(({ meta, quotes }) => {
+        const hist = buildHistoryFromChart(meta, quotes, period);
+        setHistory(hist);
+      })
+      .catch(() => setError('تعذر تحميل البيانات'))
+      .finally(() => setLoading(false));
+  }, [period]);
+
+  const price = tasiData?.price ?? 0;
+  const chgPct = tasiData?.changePercent ?? 0;
+  const isUp = chgPct >= 0;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.92, opacity: 0, y: 16 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.92, opacity: 0, y: 16 }}
+          className="w-full max-w-2xl bg-app-surface border border-app-border rounded-3xl overflow-hidden modal-shadow flex flex-col"
+          style={{ maxHeight: '90vh', direction: 'rtl' }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-app-border flex items-center justify-between" style={{ background: '#112240' }}>
+            <div>
+              <h2 className="text-lg font-bold text-app-text">المؤشر العام — تاسي</h2>
+              {price > 0 && (
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-2xl font-mono font-extrabold text-app-text">{price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: isUp ? '#00c896' : '#ff3d5a', fontFamily: "'JetBrains Mono', monospace" }}>
+                    {isUp ? '▲' : '▼'} {Math.abs(chgPct).toFixed(2)}%
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Period selector */}
+              <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {([
+                  { id: '1mo', label: 'شهر'    },
+                  { id: '6mo', label: '6 أشهر' },
+                  { id: '1y',  label: 'سنة'    },
+                  { id: '5y',  label: '5 سنوات'},
+                ] as { id: ChartRange; label: string }[]).map(p => (
+                  <button key={p.id} onClick={() => setPeriod(p.id)} style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 8, border: 'none', cursor: 'pointer', transition: 'all 0.15s ease', background: period === p.id ? '#00d4aa' : 'transparent', color: period === p.id ? '#0d1e3a' : 'rgba(255,255,255,0.4)', fontFamily: 'inherit' }}>{p.label}</button>
+                ))}
+              </div>
+              <button onClick={onClose} className="btn-icon" style={{ width: 32, height: 32, borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}>
+                <X className="w-4 h-4 text-app-text-muted" />
+              </button>
+            </div>
+          </div>
+
+          {/* Charts */}
+          <div className="flex flex-col p-4 gap-3" style={{ height: 420 }}>
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-app-text-muted animate-spin" />
+              </div>
+            ) : error ? (
+              <div className="flex-1 flex items-center justify-center text-app-text-muted text-sm">{error}</div>
+            ) : (
+              <>
+                <div style={{ flex: 3, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={history}>
+                      <defs>
+                        <linearGradient id="tasiChartGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#00d4aa" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#00d4aa" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis dataKey="time" stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                      <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} tickLine={false} axisLine={false} domain={['auto','auto']} orientation="right" />
+                      <Tooltip contentStyle={{ backgroundColor: '#112240', border: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#e2e8f0' }} />
+                      <Area type="monotone" dataKey="price" stroke="#00d4aa" fillOpacity={1} fill="url(#tasiChartGrad)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={history}>
+                      <XAxis dataKey="time" hide />
+                      <YAxis hide domain={['auto','auto']} />
+                      <Tooltip contentStyle={{ backgroundColor: '#112240', border: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#e2e8f0' }} formatter={(v: number) => [v.toFixed(4), 'Histogram']} />
+                      <Bar dataKey="histogram">
+                        {history.map((entry, idx) => <Cell key={idx} fill={entry.histogram >= 0 ? '#00d4aa' : '#ff3d5a'} opacity={0.8} />)}
+                      </Bar>
+                      <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Stats footer */}
+          {!loading && !error && history.length > 0 && (() => {
+            const prices = history.map(h => h.price).filter(Boolean);
+            const hi = Math.max(...prices);
+            const lo = Math.min(...prices);
+            const first = prices[0] ?? 0;
+            const last = prices[prices.length - 1] ?? 0;
+            const periodChg = first > 0 ? ((last - first) / first * 100) : 0;
+            return (
+              <div className="px-6 py-3 border-t border-app-border grid grid-cols-3 gap-4" style={{ background: 'rgba(0,0,0,0.15)' }}>
+                {[
+                  { label: 'أعلى سعر', value: hi.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+                  { label: 'أدنى سعر', value: lo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+                  { label: 'تغير الفترة', value: `${periodChg >= 0 ? '+' : ''}${periodChg.toFixed(2)}%`, color: periodChg >= 0 ? '#00c896' : '#ff3d5a' },
+                ].map(s => (
+                  <div key={s.label} className="text-center">
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>{s.label}</p>
+                    <p style={{ fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: s.color ?? 'white' }}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -2162,6 +2387,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor' | 'intelligence'>('home');
   const [indexQuotes, setIndexQuotes] = useState<Record<string, { price: number; change: number; changePercent: number }>>({});
   const [commodities, setCommodities] = useState<CommodityItem[]>([]);
+  const [showTASIChart, setShowTASIChart] = useState(false);
   const [commoditiesLoading, setCommoditiesLoading] = useState(true);
   const [themeSpin, setThemeSpin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -2647,9 +2873,8 @@ function App() {
   // Commodities bar — refresh every 10 minutes
   useEffect(() => {
     const COMMODITY_MAP: Record<string, { label: string; icon: string; prefix: string }> = {
-      'BZ=F':     { label: 'برنت',       icon: '🛢️', prefix: '$' },
-      'GC=F':     { label: 'ذهب',        icon: '🥇', prefix: '$' },
-      'USDSAR=X': { label: 'دولار/ريال', icon: '💵', prefix: '' },
+      'BZ=F': { label: 'برنت', icon: '🛢️', prefix: '$' },
+      'GC=F': { label: 'ذهب',  icon: '🥇', prefix: '$' },
     };
     const load = async () => {
       try {
@@ -2658,9 +2883,8 @@ function App() {
         const data = await res.json();
         if (!data.success) return;
         const items: CommodityItem[] = [
-          { label: 'برنت',       icon: '🛢️', prefix: '$', price: data.brent,  changePercent: 0 },
-          { label: 'ذهب',        icon: '🥇', prefix: '$', price: data.gold,   changePercent: 0 },
-          { label: 'دولار/ريال', icon: '💵', prefix: '',  price: data.usdsar, changePercent: 0 },
+          { label: 'برنت', icon: '🛢️', prefix: '$', price: data.brent, changePercent: 0 },
+          { label: 'ذهب',  icon: '🥇', prefix: '$', price: data.gold,  changePercent: 0 },
         ].filter(c => c.price > 0);
         if (items.length > 0) setCommodities(items);
       } catch { /* silent fail */ } finally {
@@ -3179,6 +3403,7 @@ function App() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, ease: 'easeOut' }}
+                onClick={() => setShowTASIChart(true)}
                 style={{
                   width: 280, flexShrink: 0,
                   background: '#112240',
@@ -3186,7 +3411,10 @@ function App() {
                   borderRight: '3px solid #00d4aa',
                   borderRadius: 10,
                   padding: '12px 16px',
+                  cursor: 'pointer',
+                  transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
                 }}
+                whileHover={{ boxShadow: '0 0 20px rgba(0,212,170,0.2)' }}
               >
                 {/* Line 1 */}
                 <div className="flex items-center justify-between mb-2">
@@ -3360,6 +3588,10 @@ function App() {
 
         {showAlertsModal && (
           <AlertsModal onClose={() => setShowAlertsModal(false)} />
+        )}
+
+        {showTASIChart && (
+          <TASIChartModal onClose={() => setShowTASIChart(false)} tasiData={tasiData} />
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

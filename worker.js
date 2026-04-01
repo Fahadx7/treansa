@@ -84,11 +84,10 @@ async function handleCommodities() {
   }
 
   const items = [
-    { key: 'brent',  symbol: 'BZ=F'     },
-    { key: 'gold',   symbol: 'GC=F'     },
-    { key: 'usdsar', symbol: 'USDSAR=X' },
+    { key: 'brent', symbol: 'BZ=F' },
+    { key: 'gold',  symbol: 'GC=F' },
   ];
-  const result = { success: true, brent: 0, gold: 0, usdsar: 3.75 };
+  const result = { success: true, brent: 0, gold: 0 };
 
   await Promise.all(items.map(async ({ key, symbol }) => {
     try {
