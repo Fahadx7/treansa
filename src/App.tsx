@@ -4,16 +4,16 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { 
-  Radar, 
-  TrendingUp, 
-  AlertCircle, 
-  CheckCircle2, 
-  Loader2, 
-  RefreshCw, 
-  Bell, 
-  History, 
-  Zap, 
+import {
+  Radar,
+  TrendingUp,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  Bell,
+  History,
+  Zap,
   Send,
   Brain,
   Calculator,
@@ -36,7 +36,10 @@ import {
   Moon,
   Newspaper,
   Search,
-  List as ListIcon
+  List as ListIcon,
+  Maximize2,
+  Minimize2,
+  X,
 } from 'lucide-react';
 import AIAdvisor from './pages/AIAdvisor';
 import IntelligenceEngine from './pages/IntelligenceEngine';
@@ -55,19 +58,20 @@ const AutoSizer = ({ children }: { children: (size: { width: number; height: num
   }, []);
   return <div ref={ref} style={{ width: '100%', height: '100%' }}>{children({ width: size.width || 400, height: size.height || 500 })}</div>;
 };
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area, 
-  BarChart, 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
   Bar,
-  ReferenceLine
+  ReferenceLine,
+  Cell
 } from 'recharts';
 
 import {
@@ -544,6 +548,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const [chartPeriod, setChartPeriod] = useState<ChartRange>('1mo');
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [liveIndicators, setLiveIndicators] = useState<ReturnType<typeof computeIndicators> | null>(null);
 
@@ -862,12 +867,87 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
 
                   <div className="space-y-4">
                     {/* Chart header + period selector */}
+                    {/* Fullscreen chart overlay */}
+                    {isFullscreen && (
+                      <div className="fixed inset-0 z-[200] bg-[#060b14] flex flex-col" onClick={() => setIsFullscreen(false)}>
+                        <div className="flex items-center justify-between px-5 py-3 border-b border-app-border" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-3">
+                            <div>
+                              <span className="text-base font-bold text-app-text">{stock.companyName}</span>
+                              <span className="text-xs text-app-text-muted font-mono mr-2">{stock.symbol}</span>
+                            </div>
+                            <span className="text-2xl font-mono font-bold text-app-text">{stock.price.toFixed(2)}</span>
+                            <span className={`text-sm font-bold ${stock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                              {([{ id: '1d', label: 'يوم' }, { id: '1w', label: 'أسبوع' }, { id: '1mo', label: 'شهر' }, { id: '6mo', label: '6م' }, { id: '1y', label: 'سنة' }, { id: '5y', label: '5س' }] as { id: ChartRange; label: string }[]).map(p => (
+                                <button key={p.id} onClick={() => setChartPeriod(p.id)} style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', transition: 'all 0.15s', background: chartPeriod === p.id ? '#00d4aa' : 'transparent', color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)', fontFamily: 'inherit' }}>{p.label}</button>
+                              ))}
+                            </div>
+                            <button onClick={() => setIsFullscreen(false)} className="p-2 rounded-xl bg-app-surface border border-app-border hover:bg-app-bg transition-colors">
+                              <Minimize2 className="w-4 h-4 text-app-text-muted" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex-1 p-4 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+                          {/* Price chart – 65% */}
+                          <div style={{ flex: '0 0 62%' }} className="bg-app-surface border border-app-border rounded-2xl p-3 relative">
+                            {loadingHistory ? (
+                              <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-6 h-6 text-app-text-muted animate-spin" /></div>
+                            ) : (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={history}>
+                                  <defs>
+                                    <linearGradient id="fsPrice" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                    </linearGradient>
+                                  </defs>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
+                                  <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                                  <YAxis stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} domain={['auto', 'auto']} orientation="right" />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '12px', color: 'var(--color-app-text)' }} />
+                                  <Area type="monotone" dataKey="price" stroke="#10b981" fillOpacity={1} fill="url(#fsPrice)" strokeWidth={2} dot={false} />
+                                </AreaChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                          {/* MACD chart – 35% */}
+                          <div style={{ flex: '0 0 32%' }} className="bg-app-surface border border-app-border rounded-2xl p-3 relative">
+                            <span className="absolute top-2 right-3 text-[10px] font-bold text-app-text-muted">MACD</span>
+                            {!loadingHistory && (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={history}>
+                                  <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={9} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                                  <YAxis stroke="var(--color-app-text-muted)" fontSize={9} tickLine={false} axisLine={false} orientation="right" />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '11px' }} />
+                                  <ReferenceLine y={0} stroke="var(--color-app-text-muted)" />
+                                  <Bar dataKey="histogram" maxBarSize={4}>
+                                    {history.map((e, i) => <Cell key={i} fill={e.histogram >= 0 ? '#10b981' : '#ef4444'} fillOpacity={0.8} />)}
+                                  </Bar>
+                                  <Line type="monotone" dataKey="macd" stroke="#3b82f6" dot={false} strokeWidth={1} />
+                                  <Line type="monotone" dataKey="signal" stroke="#f59e0b" dot={false} strokeWidth={1} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
                         <TrendingUp className="w-4 h-4 text-emerald-500" />
                         الرسم البياني والمؤشرات
                       </h3>
                       {/* Period pill tabs */}
+                      <div className="flex items-center gap-2">
+                      <button onClick={() => setIsFullscreen(true)} title="ملء الشاشة" className="p-1.5 rounded-lg hover:bg-app-bg transition-colors text-app-text-muted hover:text-app-text">
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
                       <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                         {([
                           { id: '1d',  label: 'يوم'    },
@@ -896,6 +976,7 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                             {p.label}
                           </button>
                         ))}
+                      </div>
                       </div>
                     </div>
 
@@ -2132,6 +2213,142 @@ function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: b
   );
 }
 
+// ─── TASI Chart Modal ────────────────────────────────────────────────────────
+
+const TASIChartModal = ({ onClose, tasiData }: { onClose: () => void; tasiData: TASIData | null }) => {
+  const [period, setPeriod] = useState<ChartRange>('1mo');
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchChart('^TASI', period)
+      .then(({ meta, quotes }) => setHistory(buildHistoryFromChart(meta, quotes, period)))
+      .catch(() => setHistory([]))
+      .finally(() => setLoading(false));
+  }, [period]);
+
+  const price    = tasiData?.price ?? 0;
+  const chgPct   = tasiData?.changePercent ?? 0;
+  const isUp     = chgPct >= 0;
+  const periods: { id: ChartRange; label: string }[] = [
+    { id: '1d', label: 'يوم' }, { id: '1w', label: 'أسبوع' }, { id: '1mo', label: 'شهر' },
+    { id: '6mo', label: '6م' }, { id: '1y', label: 'سنة' }, { id: '5y', label: '5 سنوات' },
+  ];
+
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div initial={{ scale: 0.95, opacity: 0, y: 16 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+          className="w-full max-w-3xl bg-app-surface border border-app-border rounded-3xl overflow-hidden modal-shadow flex flex-col"
+          style={{ maxHeight: '92vh' }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-app-border flex items-center justify-between bg-gradient-to-l from-emerald-500/5 to-transparent">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <Activity className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-app-text">المؤشر العام — تاسي</h2>
+                <p className="text-xs text-app-text-muted font-mono">^TASI · Tadawul</p>
+              </div>
+              {price > 0 && (
+                <div className="flex items-baseline gap-2 mr-2">
+                  <span className="text-2xl font-mono font-bold text-app-text">{price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className={`text-sm font-bold ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {isUp ? '▲' : '▼'} {Math.abs(chgPct).toFixed(2)}%
+                  </span>
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} className="p-2 rounded-xl bg-app-bg border border-app-border hover:bg-app-surface transition-colors">
+              <X className="w-4 h-4 text-app-text-muted" />
+            </button>
+          </div>
+
+          {/* Period selector */}
+          <div className="px-5 py-3 border-b border-app-border flex items-center gap-1.5">
+            {periods.map(p => (
+              <button key={p.id} onClick={() => setPeriod(p.id)}
+                className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${period === p.id ? 'bg-emerald-500 text-white' : 'text-app-text-muted hover:text-app-text hover:bg-app-bg'}`}
+              >{p.label}</button>
+            ))}
+          </div>
+
+          {/* Charts */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar" style={{ minHeight: 400 }}>
+            {/* Price area chart */}
+            <div className="h-64 bg-app-bg/30 rounded-2xl border border-app-border p-3 relative">
+              <span className="absolute top-2 right-3 text-[10px] font-bold text-app-text-muted uppercase">السعر</span>
+              {loading ? (
+                <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="w-5 h-5 text-app-text-muted animate-spin" /></div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={history}>
+                    <defs>
+                      <linearGradient id="tasiGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#00d4aa" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#00d4aa" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
+                    <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                    <YAxis stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} domain={['auto', 'auto']} orientation="right" />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '12px', color: 'var(--color-app-text)' }} />
+                    <Area type="monotone" dataKey="price" stroke="#00d4aa" fillOpacity={1} fill="url(#tasiGrad)" strokeWidth={2} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* MACD chart */}
+            <div className="h-40 bg-app-bg/30 rounded-2xl border border-app-border p-3 relative">
+              <span className="absolute top-2 right-3 text-[10px] font-bold text-app-text-muted">MACD</span>
+              {!loading && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={history}>
+                    <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={9} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                    <YAxis stroke="var(--color-app-text-muted)" fontSize={9} tickLine={false} axisLine={false} orientation="right" />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '11px' }} />
+                    <ReferenceLine y={0} stroke="var(--color-app-text-muted)" />
+                    <Bar dataKey="histogram" maxBarSize={4}>
+                      {history.map((e, i) => <Cell key={i} fill={e.histogram >= 0 ? '#10b981' : '#ef4444'} fillOpacity={0.8} />)}
+                    </Bar>
+                    <Line type="monotone" dataKey="macd"   stroke="#3b82f6" dot={false} strokeWidth={1} />
+                    <Line type="monotone" dataKey="signal" stroke="#f59e0b" dot={false} strokeWidth={1} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Stats row */}
+            {tasiData && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'السعر الحالي', value: price.toLocaleString('en-US', { minimumFractionDigits: 2 }), color: 'text-app-text' },
+                  { label: 'التغيير',      value: `${tasiData.change >= 0 ? '+' : ''}${tasiData.change?.toFixed(2)}`, color: tasiData.change >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+                  { label: 'أعلى اليوم',  value: tasiData.high?.toLocaleString('en-US', { minimumFractionDigits: 2 }) ?? '—', color: 'text-emerald-400' },
+                  { label: 'أدنى اليوم',  value: tasiData.low?.toLocaleString('en-US', { minimumFractionDigits: 2 }) ?? '—', color: 'text-rose-400' },
+                ].map((stat, i) => (
+                  <div key={i} className="bg-app-bg/30 rounded-xl border border-app-border p-3 text-center">
+                    <p className="text-[10px] text-app-text-muted mb-1">{stat.label}</p>
+                    <p className={`text-sm font-mono font-bold ${stat.color}`}>{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -2143,6 +2360,7 @@ export default function AppWrapper() {
 function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [showTASIChart, setShowTASIChart] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [tasiData, setTasiData] = useState<TASIData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -2647,9 +2865,8 @@ function App() {
   // Commodities bar — refresh every 10 minutes
   useEffect(() => {
     const COMMODITY_MAP: Record<string, { label: string; icon: string; prefix: string }> = {
-      'BZ=F':     { label: 'برنت',       icon: '🛢️', prefix: '$' },
-      'GC=F':     { label: 'ذهب',        icon: '🥇', prefix: '$' },
-      'USDSAR=X': { label: 'دولار/ريال', icon: '💵', prefix: '' },
+      'BZ=F': { label: 'برنت', icon: '🛢️', prefix: '$' },
+      'GC=F': { label: 'ذهب',  icon: '🥇', prefix: '$' },
     };
     const load = async () => {
       try {
@@ -2658,9 +2875,8 @@ function App() {
         const data = await res.json();
         if (!data.success) return;
         const items: CommodityItem[] = [
-          { label: 'برنت',       icon: '🛢️', prefix: '$', price: data.brent,  changePercent: 0 },
-          { label: 'ذهب',        icon: '🥇', prefix: '$', price: data.gold,   changePercent: 0 },
-          { label: 'دولار/ريال', icon: '💵', prefix: '',  price: data.usdsar, changePercent: 0 },
+          { label: 'برنت', icon: '🛢️', prefix: '$', price: data.brent, changePercent: 0 },
+          { label: 'ذهب',  icon: '🥇', prefix: '$', price: data.gold,  changePercent: 0 },
         ].filter(c => c.price > 0);
         if (items.length > 0) setCommodities(items);
       } catch { /* silent fail */ } finally {
@@ -3179,6 +3395,8 @@ function App() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, ease: 'easeOut' }}
+                onClick={() => setShowTASIChart(true)}
+                title="انقر لعرض الرسم البياني"
                 style={{
                   width: 280, flexShrink: 0,
                   background: '#112240',
@@ -3186,6 +3404,7 @@ function App() {
                   borderRight: '3px solid #00d4aa',
                   borderRadius: 10,
                   padding: '12px 16px',
+                  cursor: 'pointer',
                 }}
               >
                 {/* Line 1 */}
@@ -3360,6 +3579,10 @@ function App() {
 
         {showAlertsModal && (
           <AlertsModal onClose={() => setShowAlertsModal(false)} />
+        )}
+
+        {showTASIChart && (
+          <TASIChartModal onClose={() => setShowTASIChart(false)} tasiData={tasiData} />
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
