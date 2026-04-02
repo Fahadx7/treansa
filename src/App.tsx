@@ -526,12 +526,378 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
   );
 };
 
+
+interface PatternSignal {
+  name: string;
+  bias: 'bullish' | 'bearish' | 'neutral';
+  confidence: number;
+  note: string;
+  invalidation?: string;
+}
+
+function buildSyntheticQuotesFromPrices(prices: number[]) {
+  const start = Date.now() - (prices.length - 1) * 5 * 60 * 1000;
+  return prices.map((price, index) => ({
+    close: price,
+    high: price,
+    low: price,
+    date: new Date(start + index * 5 * 60 * 1000),
+  }));
+}
+
+function buildMiniHistoryFromPrices(prices: number[]) {
+  return prices.map((price, index) => ({
+    time: `${index + 1}`,
+    price: +price.toFixed(2),
+  }));
+}
+
+function detectChartPatternsFromSeries(prices: number[], currentPrice?: number): PatternSignal[] {
+  if (!prices || prices.length < 6) return [];
+
+  const last = prices[prices.length - 1];
+  const shortSlice = prices.slice(-5);
+  const longSlice = prices.slice(-10);
+  const startShort = shortSlice[0];
+  const endShort = shortSlice[shortSlice.length - 1];
+  const startLong = longSlice[0];
+  const endLong = longSlice[longSlice.length - 1];
+
+  const minShort = Math.min(...shortSlice);
+  const maxShort = Math.max(...shortSlice);
+  const minLong = Math.min(...longSlice);
+  const maxLong = Math.max(...longSlice);
+
+  const shortChange = ((endShort - startShort) / Math.max(0.0001, startShort)) * 100;
+  const longChange = ((endLong - startLong) / Math.max(0.0001, startLong)) * 100;
+  const retraceFromHigh = ((maxLong - last) / Math.max(0.0001, maxLong)) * 100;
+  const bounceFromLow = ((last - minLong) / Math.max(0.0001, minLong)) * 100;
+  const compression = ((maxShort - minShort) / Math.max(0.0001, last)) * 100;
+
+  const signals: PatternSignal[] = [];
+
+  if (shortChange > 1.2 && retraceFromHigh < 1.5) {
+    signals.push({
+      name: 'استمرار صاعد قصير المدى',
+      bias: 'bullish',
+      confidence: Math.min(88, Math.round(58 + shortChange * 8)),
+      note: 'الزخم القصير ما زال محافظاً على معظم الحركة الأخيرة بدون تراجع حاد.',
+      invalidation: `كسر ${minShort.toFixed(2)}`,
+    });
+  }
+
+  if (longChange < -1.2 && bounceFromLow < 1.5) {
+    signals.push({
+      name: 'ضغط بيعي مستمر',
+      bias: 'bearish',
+      confidence: Math.min(86, Math.round(56 + Math.abs(longChange) * 7)),
+      note: 'السلسلة ما زالت قريبة من القاع الأخير ولا تظهر ارتداداً قوياً حتى الآن.',
+      invalidation: `اختراق ${maxShort.toFixed(2)}`,
+    });
+  }
+
+  if (compression < 1.8) {
+    signals.push({
+      name: 'انضغاط / تماسك سعري',
+      bias: 'neutral',
+      confidence: Math.max(52, Math.round(74 - compression * 8)),
+      note: 'نطاق الحركة القصير ضيق، ما يرفع احتمالية خروج حركة اتجاهية لاحقاً.',
+      invalidation: currentPrice ? `فقدان ${currentPrice.toFixed(2)}` : undefined,
+    });
+  }
+
+  if (last > maxLong * 0.995) {
+    signals.push({
+      name: 'اقتراب من قمة قصيرة',
+      bias: 'bullish',
+      confidence: 63,
+      note: 'السعر يختبر المنطقة العليا الأخيرة؛ الثبات فوقها يحولها لاختراق.',
+      invalidation: `العودة تحت ${maxShort.toFixed(2)}`,
+    });
+  } else if (last < minLong * 1.005) {
+    signals.push({
+      name: 'اختبار قاع قصير',
+      bias: 'bearish',
+      confidence: 63,
+      note: 'السعر قريب من القاع الأخير؛ فشل الارتداد يبقي ضغط الهبوط قائماً.',
+      invalidation: `العودة فوق ${minShort.toFixed(2)}`,
+    });
+  }
+
+  return signals.slice(0, 3);
+}
+
+function PatternSignalsPanel({ signals, title = 'النماذج المحتملة' }: { signals: PatternSignal[]; title?: string }) {
+  const toneMap = {
+    bullish: {
+      shell: 'bg-emerald-500/8 border-emerald-500/20',
+      text: 'text-emerald-400',
+      chip: 'bg-emerald-500/12 text-emerald-400',
+      label: 'صاعد',
+    },
+    bearish: {
+      shell: 'bg-rose-500/8 border-rose-500/20',
+      text: 'text-rose-400',
+      chip: 'bg-rose-500/12 text-rose-400',
+      label: 'هابط',
+    },
+    neutral: {
+      shell: 'bg-slate-500/8 border-slate-500/20',
+      text: 'text-slate-300',
+      chip: 'bg-slate-500/12 text-slate-300',
+      label: 'محايد',
+    },
+  } as const;
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold text-app-text-muted uppercase tracking-wider flex items-center gap-2">
+        <Target className="w-4 h-4 text-cyan-400" />
+        {title}
+      </h3>
+
+      {signals.length === 0 ? (
+        <div className="p-4 rounded-2xl border border-app-border bg-app-surface/30 text-sm text-app-text-muted">
+          لا يوجد نموذج واضح بدرجة ثقة مقبولة حالياً. هذا يعني أن السلوك أقرب إلى حركة عادية من دون إشارة بنيوية قوية.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3">
+          {signals.map((signal, index) => {
+            const tone = toneMap[signal.bias];
+            return (
+              <div key={`${signal.name}-${index}`} className={`p-4 rounded-2xl border ${tone.shell}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className={`text-sm font-bold ${tone.text}`}>{signal.name}</div>
+                    <div className="text-xs text-app-text-muted mt-1 leading-relaxed">{signal.note}</div>
+                  </div>
+                  <div className="text-left shrink-0">
+                    <div className={`text-[10px] px-2 py-1 rounded-full ${tone.chip}`}>{tone.label}</div>
+                    <div className="text-xs num text-app-text mt-2">{signal.confidence}%</div>
+                  </div>
+                </div>
+                {signal.invalidation && (
+                  <div className="mt-3 text-[11px] text-app-text-muted">
+                    شرط الإلغاء: <span className="num text-app-text">{signal.invalidation}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MarketIndexModal = ({
+  indexData,
+  history,
+  lastUpdated,
+  stocks,
+  commodities,
+  onClose,
+}: {
+  indexData: TASIData;
+  history: number[];
+  lastUpdated: Date | null;
+  stocks: StockStats[];
+  commodities: CommodityItem[];
+  onClose: () => void;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const chartData = buildMiniHistoryFromPrices(history.length > 1 ? history : [indexData.price]);
+  const syntheticQuotes = buildSyntheticQuotesFromPrices(history.length > 1 ? history : [indexData.price, indexData.price]);
+  const indicators = computeIndicators(syntheticQuotes);
+  const patterns = detectChartPatternsFromSeries(history.length > 1 ? history : [indexData.price], indexData.price);
+  const gainers = stocks.filter(s => s.change > 0).sort((a, b) => b.change - a.change).slice(0, 5);
+  const losers = stocks.filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 5);
+  const upCount = stocks.filter(s => s.change > 0).length;
+  const downCount = stocks.filter(s => s.change < 0).length;
+  const stableCount = Math.max(0, stocks.length - upCount - downCount);
+  const isUp = indexData.changePercent >= 0;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.94, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.94, opacity: 0, y: 20 }}
+          className={`bg-app-surface border border-app-border overflow-hidden modal-shadow flex flex-col ${
+            isExpanded
+              ? 'fixed inset-2 md:inset-6 rounded-2xl'
+              : 'w-full max-w-5xl max-h-[92vh] rounded-3xl'
+          }`}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-5 md:p-6 border-b border-app-border flex items-center justify-between bg-app-surface/60">
+            <div>
+              <div className="text-[11px] text-app-text-muted mb-1">المؤشر العام السعودي</div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-2xl md:text-3xl font-extrabold text-app-text num">{indexData.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+                <div className={`px-3 py-1.5 rounded-xl border text-sm font-bold num ${
+                  isUp ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+                }`}>
+                  {isUp ? '+' : '-'}{Math.abs(indexData.change).toFixed(2)} نقطة · {isUp ? '+' : '-'}{Math.abs(indexData.changePercent).toFixed(2)}%
+                </div>
+                {lastUpdated && <div className="text-[11px] text-app-text-muted">آخر تحديث: {lastUpdated.toLocaleTimeString('ar-SA')}</div>}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsExpanded(v => !v)}
+                className="p-2 rounded-xl border border-app-border hover:bg-app-bg transition-colors text-app-text-muted"
+                title={isExpanded ? 'تصغير' : 'تكبير'}
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-xl border border-app-border hover:bg-app-bg transition-colors text-app-text-muted"
+                title="إغلاق"
+              >
+                <AlertCircle className="w-5 h-5 rotate-45" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-5 md:p-6 space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="p-4 rounded-2xl border border-app-border bg-app-bg/30">
+                <div className="text-[11px] text-app-text-muted mb-1">التغير اليومي</div>
+                <div className={`text-xl font-extrabold num ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {isUp ? '+' : '-'}{Math.abs(indexData.changePercent).toFixed(2)}%
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl border border-app-border bg-app-bg/30">
+                <div className="text-[11px] text-app-text-muted mb-1">RSI اللحظي</div>
+                <div className="text-xl font-extrabold num text-app-text">{indicators.rsi.toFixed(1)}</div>
+              </div>
+              <div className="p-4 rounded-2xl border border-app-border bg-app-bg/30">
+                <div className="text-[11px] text-app-text-muted mb-1">MACD Histogram</div>
+                <div className={`text-xl font-extrabold num ${indicators.macd.histogram >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {indicators.macd.histogram >= 0 ? '+' : ''}{indicators.macd.histogram.toFixed(3)}
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl border border-app-border bg-app-bg/30">
+                <div className="text-[11px] text-app-text-muted mb-1">اتساع السوق</div>
+                <div className="text-sm font-bold text-app-text">{upCount} صاعد · {downCount} هابط · {stableCount} ثابت</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[1.45fr_0.95fr] gap-6">
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-app-border bg-app-bg/20 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-sm font-bold text-app-text">السجل اللحظي للمؤشر</div>
+                      <div className="text-[11px] text-app-text-muted">يبنى من آخر نقاط التحديث المتراكمة داخل الجلسة الحالية</div>
+                    </div>
+                    <div className={`text-xs font-bold px-2.5 py-1 rounded-full ${isUp ? 'bg-emerald-500/12 text-emerald-400' : 'bg-rose-500/12 text-rose-400'}`}>
+                      {isUp ? 'ميل صاعد' : 'ميل هابط'}
+                    </div>
+                  </div>
+                  <div className="h-[360px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                        <defs>
+                          <linearGradient id="tasiHistoryFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.28}/>
+                            <stop offset="95%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.02}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
+                        <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} orientation="right" domain={['auto', 'auto']} />
+                        <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)' }} />
+                        <Area type="monotone" dataKey="price" stroke={isUp ? '#10b981' : '#ef4444'} fill="url(#tasiHistoryFill)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <PatternSignalsPanel signals={patterns} title="النماذج المحتملة على المؤشر العام" />
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-app-border bg-app-bg/20 p-4">
+                  <div className="text-sm font-bold text-app-text mb-3">أبرز الصاعدين</div>
+                  <div className="space-y-2">
+                    {gainers.length === 0 ? (
+                      <div className="text-sm text-app-text-muted">لا توجد بيانات كافية حالياً.</div>
+                    ) : gainers.map((stock) => (
+                      <div key={`gainer-${stock.symbol}`} className="flex items-center justify-between rounded-xl border border-app-border bg-app-surface/40 px-3 py-2.5">
+                        <div>
+                          <div className="text-sm font-semibold text-app-text">{stock.companyName}</div>
+                          <div className="text-[11px] num text-app-text-muted">{stock.symbol.replace('.SR', '')}</div>
+                        </div>
+                        <div className="text-left">
+                          <div className="text-sm num text-app-text">{stock.price.toFixed(2)}</div>
+                          <div className="text-[11px] font-bold text-emerald-400">+{stock.change.toFixed(2)}%</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-app-border bg-app-bg/20 p-4">
+                  <div className="text-sm font-bold text-app-text mb-3">أبرز الهابطين</div>
+                  <div className="space-y-2">
+                    {losers.length === 0 ? (
+                      <div className="text-sm text-app-text-muted">لا توجد بيانات كافية حالياً.</div>
+                    ) : losers.map((stock) => (
+                      <div key={`loser-${stock.symbol}`} className="flex items-center justify-between rounded-xl border border-app-border bg-app-surface/40 px-3 py-2.5">
+                        <div>
+                          <div className="text-sm font-semibold text-app-text">{stock.companyName}</div>
+                          <div className="text-[11px] num text-app-text-muted">{stock.symbol.replace('.SR', '')}</div>
+                        </div>
+                        <div className="text-left">
+                          <div className="text-sm num text-app-text">{stock.price.toFixed(2)}</div>
+                          <div className="text-[11px] font-bold text-rose-400">{stock.change.toFixed(2)}%</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {commodities.length > 0 && (
+                  <div className="rounded-3xl border border-app-border bg-app-bg/20 p-4">
+                    <div className="text-sm font-bold text-app-text mb-3">السلع والمرجعيات</div>
+                    <div className="space-y-2">
+                      {commodities.map((item) => (
+                        <div key={item.label} className="flex items-center justify-between rounded-xl border border-app-border bg-app-surface/40 px-3 py-2.5">
+                          <div className="text-sm text-app-text">{item.icon} {item.label}</div>
+                          <div className="text-sm num text-app-text">{item.prefix}{item.price.toLocaleString('en-US', { minimumFractionDigits: item.prefix === '' ? 4 : 2, maximumFractionDigits: item.prefix === '' ? 4 : 2 })}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: { 
   stock: StockStats, 
   onClose: () => void,
   watchlist: string[],
   onToggleWatchlist: (symbol: string) => void
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'analysis' | 'news' | 'risk' | 'alerts'>('analysis');
   const [targetPrice, setTargetPrice] = useState<string>('');
   const [condition, setCondition] = useState<'above' | 'below'>('above');
@@ -644,6 +1010,10 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const riskResult = calcRisk();
   // Merge live indicators (computed from chart) over the basic quote data
   const ds = liveIndicators ? { ...stock, ...liveIndicators } : stock;
+  const patternSignals = detectChartPatternsFromSeries(
+    history.map((entry: any) => entry.price).filter((value: number) => typeof value === 'number' && !Number.isNaN(value)),
+    stock.price,
+  );
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -731,7 +1101,11 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="w-full max-w-lg bg-app-surface border border-app-border rounded-3xl overflow-hidden modal-shadow modal-mobile max-h-[90vh] flex flex-col"
+          className={`bg-app-surface border border-app-border overflow-hidden modal-shadow modal-mobile flex flex-col ${
+            isExpanded
+              ? 'fixed inset-2 md:inset-6 rounded-2xl'
+              : 'w-full max-w-lg max-h-[90vh] rounded-3xl'
+          }`}
           onClick={e => e.stopPropagation()}
         >
           <div className="p-6 border-b border-app-border flex items-center justify-between bg-app-surface/50">
@@ -752,12 +1126,21 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                 <p className="text-sm text-app-text-muted font-mono">{stock.symbol}</p>
               </div>
             </div>
-            <button 
-              onClick={onClose}
-              className="p-2 hover:bg-app-bg rounded-full transition-colors"
-            >
-              <AlertCircle className="w-6 h-6 text-app-text-muted rotate-45" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsExpanded(v => !v)}
+                className="p-2 hover:bg-app-bg rounded-full transition-colors border border-app-border"
+                title={isExpanded ? 'تصغير' : 'تكبير'}
+              >
+                <ExternalLink className="w-4 h-4 text-app-text-muted" />
+              </button>
+              <button 
+                onClick={onClose}
+                className="p-2 hover:bg-app-bg rounded-full transition-colors"
+              >
+                <AlertCircle className="w-6 h-6 text-app-text-muted rotate-45" />
+              </button>
+            </div>
           </div>
           
           <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -1128,6 +1511,8 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                       </div>
                     </div>
                   </div>
+
+                  <PatternSignalsPanel signals={patternSignals} />
 
                   {/* AI Analyst Section */}
                   <div className="space-y-4 pt-4 border-t border-app-border">
@@ -2150,6 +2535,7 @@ function App() {
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
   const [selectedStock, setSelectedStock] = useState<StockStats | null>(null);
+  const [showTasiDetails, setShowTasiDetails] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [triggeredAlerts, setTriggeredAlerts] = useState<CustomAlert[]>([]);
@@ -3175,10 +3561,13 @@ function App() {
             const isUp     = chgPct >= 0;
             const hasPrice = price > 0;
             return (
-              <motion.div
+              <motion.button
+                type="button"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, ease: 'easeOut' }}
+                onClick={() => hasPrice && setShowTasiDetails(true)}
+                className="text-right cursor-pointer transition-transform hover:-translate-y-0.5"
                 style={{
                   width: 280, flexShrink: 0,
                   background: '#112240',
@@ -3196,20 +3585,27 @@ function App() {
                   </button>
                 </div>
                 {/* Line 2 */}
-                <div className="flex items-baseline gap-2 mb-2">
-                  {hasPrice ? (
-                    <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
-                      {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  ) : isLoadingData ? (
-                    <div className="animate-pulse h-7 w-32 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
-                  ) : (
-                    <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.2)' }}>—</span>
-                  )}
+                <div className="flex items-end justify-between gap-2 mb-2">
+                  <div className="flex items-baseline gap-2">
+                    {hasPrice ? (
+                      <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em', color: 'white', lineHeight: 1 }}>
+                        {price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : isLoadingData ? (
+                      <div className="animate-pulse h-7 w-32 rounded-lg" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                    ) : (
+                      <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'rgba(255,255,255,0.2)' }}>—</span>
+                    )}
+                  </div>
                   {hasPrice && (
-                    <span style={{ fontSize: 14, fontWeight: 700, color: isUp ? '#00c896' : '#ff3d5a', fontFamily: "'JetBrains Mono', monospace" }}>
-                      {isUp ? '▲' : '▼'} {Math.abs(chgPct).toFixed(2)}%
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span style={{ fontSize: 16, fontWeight: 800, color: isUp ? '#00c896' : '#ff3d5a', fontFamily: "'JetBrains Mono', monospace" }}>
+                        {isUp ? '▲' : '▼'} {Math.abs(chgPct).toFixed(2)}%
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', fontFamily: "'JetBrains Mono', monospace" }}>
+                        {isUp ? '+' : '-'}{Math.abs(chg).toFixed(2)} نقطة
+                      </span>
+                    </div>
                   )}
                 </div>
                 {/* Line 3 */}
@@ -3222,7 +3618,7 @@ function App() {
                     <span>⚪ <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{unchanged}</span></span>
                   </div>
                 )}
-              </motion.div>
+              </motion.button>
             );
           })()}
 
@@ -3351,6 +3747,17 @@ function App() {
             onClose={() => setSelectedStock(null)} 
             watchlist={watchlist}
             onToggleWatchlist={toggleWatchlist}
+          />
+        )}
+
+        {showTasiDetails && status?.marketIndex && (
+          <MarketIndexModal
+            indexData={status.marketIndex}
+            history={tasiHistoryRef.current}
+            lastUpdated={tasiLastUpdated}
+            stocks={status.tickerData ?? []}
+            commodities={commodities}
+            onClose={() => setShowTasiDetails(false)}
           />
         )}
 
