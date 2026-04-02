@@ -5,23 +5,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, 
   MessageSquare, 
-  Star, 
   User, 
   Moon, 
-  Newspaper, 
-  Search, 
-  List as ListIcon, 
-  Maximize2, 
-  Minimize2 
+  Search 
 } from 'lucide-react';
 
-// استيراد المكونات الأخرى إذا كانت موجودة في مشروعك
-// import AIAdvisor from './pages/AIAdvisor';
-// import IntelligenceEngine from './pages/IntelligenceEngine';
-
-/**
- * مكون AutoSizer بسيط لحساب أبعاد الحاوية تلقائياً
- */
 const AutoSizer = ({ children }: { children: (size: { width: number; height: number }) => React.ReactNode }) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
@@ -39,19 +27,16 @@ const AutoSizer = ({ children }: { children: (size: { width: number; height: num
   }, []);
 
   return (
-    <div ref={ref} style={{ width: '100%', height: '100%', minHeight: '200px' }}>
+    <div ref={ref} style={{ width: '100%', height: '100%', minHeight: '300px' }}>
       {size.width > 0 && children(size)}
     </div>
   );
 };
 
-function App() {
-  // هنا تضع المنطق الخاص بك (State, Messages, etc.)
-  
+export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      {/* الهيدر أو القائمة الجانبية */}
-      <header className="p-4 border-b dark:border-zinc-800 flex justify-between items-center">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      <header className="p-4 border-b dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-900">
         <h1 className="text-xl font-bold flex items-center gap-2">
           <MessageSquare className="w-6 h-6 text-blue-500" />
           Trandsa AI
@@ -62,20 +47,22 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-4 h-[calc(100-80px)]">
-        {/* مثال لاستخدام FixedSizeList التي كانت تسبب الخطأ */}
-        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border dark:border-zinc-800 h-[500px]">
+      <main className="max-w-4xl mx-auto p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border dark:border-zinc-800 h-[500px] overflow-hidden">
           <AutoSizer>
             {({ width, height }) => (
               <FixedSizeList
                 height={height}
-                itemCount={100}
-                itemSize={50}
+                itemCount={50}
+                itemSize={60}
                 width={width}
               >
                 {({ index, style }) => (
-                  <div style={style} className="px-4 border-b dark:border-zinc-800 flex items-center">
-                    Message #{index + 1} from AI Assistant
+                  <div style={style} className="px-4 border-b dark:border-zinc-800 flex items-center hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-blue-600">AI Assistant</span>
+                      <span className="text-sm text-zinc-500">تحليل السوق للرسالة رقم {index + 1}...</span>
+                    </div>
                   </div>
                 )}
               </FixedSizeList>
@@ -83,14 +70,13 @@ function App() {
           </AutoSizer>
         </div>
 
-        {/* منطقة إدخال النص */}
         <div className="mt-4 flex gap-2">
           <input 
             type="text" 
             placeholder="اسأل رادار السوق السعودي..."
-            className="flex-1 p-3 rounded-lg border dark:border-zinc-800 dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 p-4 rounded-xl border dark:border-zinc-800 dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg transition-colors">
+          <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-xl transition-all shadow-lg shadow-blue-500/20">
             <Send className="w-5 h-5" />
           </button>
         </div>
@@ -98,5 +84,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
