@@ -3141,9 +3141,8 @@ function App() {
   // Commodities bar — refresh every 10 minutes
   useEffect(() => {
     const COMMODITY_MAP: Record<string, { label: string; icon: string; prefix: string }> = {
-      'BZ=F':     { label: 'برنت',       icon: '🛢️', prefix: '$' },
-      'GC=F':     { label: 'ذهب',        icon: '🥇', prefix: '$' },
-      'USDSAR=X': { label: 'دولار/ريال', icon: '💵', prefix: '' },
+      'BZ=F': { label: 'برنت', icon: '🛢️', prefix: '$' },
+      'GC=F': { label: 'ذهب',  icon: '🥇', prefix: '$' },
     };
     const load = async () => {
       try {
@@ -3152,9 +3151,8 @@ function App() {
         const data = await res.json();
         if (!data.success) return;
         const items: CommodityItem[] = [
-          { label: 'برنت',       icon: '🛢️', prefix: '$', price: data.brent,  changePercent: 0 },
-          { label: 'ذهب',        icon: '🥇', prefix: '$', price: data.gold,   changePercent: 0 },
-          { label: 'دولار/ريال', icon: '💵', prefix: '',  price: data.usdsar, changePercent: 0 },
+          { label: 'برنت', icon: '🛢️', prefix: '$', price: data.brent, changePercent: 0 },
+          { label: 'ذهب',  icon: '🥇', prefix: '$', price: data.gold,  changePercent: 0 },
         ].filter(c => c.price > 0);
         if (items.length > 0) setCommodities(items);
       } catch { /* silent fail */ } finally {
