@@ -249,59 +249,58 @@ function parseStooqCSV(csv, symbol) {
 async function fetchChartFromStooq(symbol, range) {
   const s = symbol.toLowerCase().replace('.sr', '.sa');
   const cfg = STOOQ_CFG[range] ?? STOOQ_CFG['1mo'];
-  console.log(`[chart] fetchChartFromStooq: symbol=${symbol} s=${s} range=${range}`);
   const d2 = new Date();
   const d1 = new Date(Date.now() - cfg.days * 86400000);
-  // stooq needs ^ literally (not %5E)
   const stooqUrl = `https://stooq.com/q/d/l/?s=${s}&d1=${dateStr(d1)}&d2=${dateStr(d2)}&i=${cfg.interval}`;
-  const h = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Referer': 'https://stooq.com/',
-  };
 
-  // Attempt 1: stooq direct
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+  // Attempt 1: stooq direct — prime cookies from real-time endpoint first
   try {
-    console.log(`[chart] attempt1 stooq: ${stooqUrl}`);
-    const res = await fetchWithTimeout(stooqUrl, { headers: h }, 8000);
-    console.log(`[chart] attempt1 status: ${res?.status}`);
+    const primeRes = await fetchWithTimeout(`https://stooq.com/q/l/?s=${s}&f=sd2t2ohlcv&h&e=json`, {
+      headers: { 'User-Agent': ua, 'Referer': 'https://stooq.com/' },
+    }, 5000);
+    const cookies = primeRes?.headers?.get('set-cookie') ?? '';
+    const res = await fetchWithTimeout(stooqUrl, {
+      headers: {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Referer': 'https://stooq.com/',
+        ...(cookies ? { 'Cookie': cookies } : {}),
+      },
+    }, 8000);
+    console.log(`[chart] stooq direct: ${res?.status}`);
     if (res?.ok) {
       const csv = await res.text();
-      console.log(`[chart] attempt1 csv lines: ${csv.split('\n').length}`);
       const parsed = parseStooqCSV(csv, symbol);
-      if (parsed) { console.log(`[chart] attempt1 OK: ${parsed.quotes.length} quotes`); return parsed; }
+      if (parsed) { console.log(`[chart] stooq direct OK: ${parsed.quotes.length}`); return parsed; }
+      console.log(`[chart] stooq direct bad data: ${csv.slice(0, 60)}`);
     }
-  } catch (e) { console.log(`[chart] attempt1 error: ${e.message}`); }
+  } catch (e) { console.log(`[chart] stooq direct err: ${e.message}`); }
 
-  // Attempt 2: allorigins proxy → stooq
+  // Attempt 2: corsproxy.io → stooq
   try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(stooqUrl)}`;
-    console.log(`[chart] attempt2 allorigins+stooq`);
-    const res = await fetchWithTimeout(proxyUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    }, 10000);
-    console.log(`[chart] attempt2 status: ${res?.status}`);
+    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(stooqUrl)}`;
+    const res = await fetchWithTimeout(proxyUrl, { headers: { 'User-Agent': ua } }, 10000);
+    console.log(`[chart] corsproxy+stooq: ${res?.status}`);
     if (res?.ok) {
-      const wrapper = await res.json();
-      const parsed = parseStooqCSV(wrapper?.contents ?? '', symbol);
-      if (parsed) { console.log(`[chart] attempt2 OK`); return parsed; }
-      console.log(`[chart] attempt2 bad contents: ${String(wrapper?.contents).slice(0,80)}`);
+      const csv = await res.text();
+      const parsed = parseStooqCSV(csv, symbol);
+      if (parsed) { console.log(`[chart] corsproxy OK`); return parsed; }
     }
-  } catch (e) { console.log(`[chart] attempt2 error: ${e.message}`); }
+  } catch (e) { console.log(`[chart] corsproxy err: ${e.message}`); }
 
-  // Attempt 3: allorigins proxy → Yahoo Finance
+  // Attempt 3: corsproxy.io → Yahoo Finance
   try {
     const cfg2 = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
     const p1 = cfg2.period1();
     const p2 = Math.floor(Date.now() / 1000);
     const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${p1}&period2=${p2}&interval=${cfg2.interval}`;
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`;
-    const res = await fetchWithTimeout(proxyUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    }, 10000);
+    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`;
+    const res = await fetchWithTimeout(proxyUrl, { headers: { 'User-Agent': ua } }, 10000);
+    console.log(`[chart] corsproxy+yahoo: ${res?.status}`);
     if (res?.ok) {
-      const wrapper = await res.json();
-      const data = JSON.parse(wrapper?.contents ?? 'null');
+      const data = await res.json();
       const result = data?.chart?.result?.[0];
       if (result?.timestamp?.length > 0) {
         const timestamps = result.timestamp;
@@ -315,12 +314,14 @@ async function fetchChartFromStooq(symbol, range) {
           volume: q.volume?.[i] ?? 0,
         })).filter(x => x.close > 0);
         if (quotes.length > 0) {
+          console.log(`[chart] corsproxy+yahoo OK: ${quotes.length}`);
           return { success: true, meta: result.meta, quotes, source: 'yahoo-proxy' };
         }
       }
     }
-  } catch { /* all failed */ }
+  } catch (e) { console.log(`[chart] corsproxy+yahoo err: ${e.message}`); }
 
+  console.log(`[chart] all sources failed for ${symbol} ${range}`);
   return null;
 }
 
