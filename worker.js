@@ -249,6 +249,7 @@ function parseStooqCSV(csv, symbol) {
 async function fetchChartFromStooq(symbol, range) {
   const s = symbol.toLowerCase().replace('.sr', '.sa');
   const cfg = STOOQ_CFG[range] ?? STOOQ_CFG['1mo'];
+  console.log(`[chart] fetchChartFromStooq: symbol=${symbol} s=${s} range=${range}`);
   const d2 = new Date();
   const d1 = new Date(Date.now() - cfg.days * 86400000);
   // stooq needs ^ literally (not %5E)
@@ -261,26 +262,32 @@ async function fetchChartFromStooq(symbol, range) {
 
   // Attempt 1: stooq direct
   try {
+    console.log(`[chart] attempt1 stooq: ${stooqUrl}`);
     const res = await fetchWithTimeout(stooqUrl, { headers: h }, 8000);
+    console.log(`[chart] attempt1 status: ${res?.status}`);
     if (res?.ok) {
       const csv = await res.text();
+      console.log(`[chart] attempt1 csv lines: ${csv.split('\n').length}`);
       const parsed = parseStooqCSV(csv, symbol);
-      if (parsed) return parsed;
+      if (parsed) { console.log(`[chart] attempt1 OK: ${parsed.quotes.length} quotes`); return parsed; }
     }
-  } catch { /* try proxy */ }
+  } catch (e) { console.log(`[chart] attempt1 error: ${e.message}`); }
 
   // Attempt 2: allorigins proxy → stooq
   try {
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(stooqUrl)}`;
+    console.log(`[chart] attempt2 allorigins+stooq`);
     const res = await fetchWithTimeout(proxyUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
     }, 10000);
+    console.log(`[chart] attempt2 status: ${res?.status}`);
     if (res?.ok) {
       const wrapper = await res.json();
       const parsed = parseStooqCSV(wrapper?.contents ?? '', symbol);
-      if (parsed) return parsed;
+      if (parsed) { console.log(`[chart] attempt2 OK`); return parsed; }
+      console.log(`[chart] attempt2 bad contents: ${String(wrapper?.contents).slice(0,80)}`);
     }
-  } catch { /* try yahoo proxy */ }
+  } catch (e) { console.log(`[chart] attempt2 error: ${e.message}`); }
 
   // Attempt 3: allorigins proxy → Yahoo Finance
   try {
