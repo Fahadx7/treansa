@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth, GoogleAuthProvider,
   signInWithPopup, signInWithRedirect, getRedirectResult,
-  onAuthStateChanged, signOut, signInAnonymously,
+  onAuthStateChanged, signOut,
   User as FirebaseUser,
 } from 'firebase/auth';
 import { getFirestore, collection, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, getDocs, addDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
@@ -21,16 +21,13 @@ export const loginWithGoogle = async () => {
     return await signInWithPopup(auth, googleProvider);
   } catch (err: any) {
     const code = err?.code ?? '';
-    // Popup blocked → try redirect
+    // Popup blocked → try redirect (common on mobile Safari)
     if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
       return signInWithRedirect(auth, googleProvider);
     }
-    // Domain not authorized in Firebase Console → anonymous fallback
-    if (code === 'auth/unauthorized-domain' || code === 'auth/operation-not-supported-in-this-environment') {
-      return signInAnonymously(auth);
-    }
-    // User closed popup → silent
+    // User closed popup → silent, no error
     if (code === 'auth/popup-closed-by-user') return null;
+    // All other errors (unauthorized-domain, invalid-api-key, etc.) → surface to caller
     throw err;
   }
 };
