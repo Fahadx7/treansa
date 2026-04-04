@@ -2126,18 +2126,44 @@ const MarginTrading = ({
   tickerData: StockStats[],
   onClosePosition: (pos: MarginPosition) => void
 }) => {
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      const code = err?.code ?? '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // user dismissed — no message needed
+      } else if (code === 'auth/network-request-failed') {
+        setLoginError('تحقق من اتصالك بالإنترنت وأعد المحاولة');
+      } else {
+        setLoginError('فشل تسجيل الدخول، حاول مرة أخرى');
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center space-y-4">
         <Wallet className="w-12 h-12 text-app-text-muted opacity-20" />
         <h3 className="text-xl font-bold text-app-text">يرجى تسجيل الدخول</h3>
         <p className="text-app-text-muted max-w-xs mx-auto">يجب تسجيل الدخول للوصول إلى ميزات التداول بالهامش.</p>
-        <button 
-          onClick={() => loginWithGoogle()}
-          className="px-6 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-500 transition-colors"
+        <button
+          onClick={handleLogin}
+          disabled={isLoggingIn}
+          className="flex items-center justify-center gap-2 px-6 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-500 transition-colors disabled:opacity-60"
         >
-          تسجيل الدخول
+          {isLoggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
+          {isLoggingIn ? 'جارٍ الدخول...' : 'تسجيل الدخول'}
         </button>
+        {loginError && <p className="text-sm" style={{ color: '#ff3d5a' }}>{loginError}</p>}
       </div>
     );
   }
@@ -2584,6 +2610,8 @@ export default function AppWrapper() {
 function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [tasiData, setTasiData] = useState<TASIData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -2636,6 +2664,30 @@ function App() {
   useEffect(() => {
     handleRedirectResult().catch(() => { /* no redirect in progress — ignore */ });
   }, []);
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      const code = err?.code ?? '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // user dismissed — no error needed
+      } else if (code === 'auth/network-request-failed') {
+        setLoginError('تحقق من اتصالك بالإنترنت وأعد المحاولة');
+      } else if (code === 'auth/too-many-requests') {
+        setLoginError('محاولات كثيرة جداً، انتظر قليلاً ثم أعد المحاولة');
+      } else if (code === 'auth/user-disabled') {
+        setLoginError('هذا الحساب معطّل، تواصل مع الدعم');
+      } else {
+        setLoginError('فشل تسجيل الدخول، حاول مرة أخرى');
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   // Auth Listener
   useEffect(() => {
@@ -3490,14 +3542,22 @@ function App() {
                 <User className="w-4 h-4" style={{ color: '#00d4aa' }} />
               </button>
             ) : (
-              <button
-                onClick={() => loginWithGoogle()}
-                className="flex items-center gap-1.5 font-bold"
-                style={{ height: 34, padding: '0 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', fontSize: 12, transition: 'all 0.2s ease' }}
-              >
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">دخول</span>
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                <button
+                  onClick={handleLogin}
+                  disabled={isLoggingIn}
+                  className="flex items-center gap-1.5 font-bold disabled:opacity-60"
+                  style={{ height: 34, padding: '0 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', fontSize: 12, transition: 'all 0.2s ease', cursor: isLoggingIn ? 'wait' : 'pointer' }}
+                >
+                  {isLoggingIn
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <User className="w-4 h-4" />}
+                  <span className="hidden sm:inline">{isLoggingIn ? 'جارٍ الدخول...' : 'دخول'}</span>
+                </button>
+                {loginError && (
+                  <span style={{ fontSize: 10, color: '#ff3d5a', maxWidth: 160, textAlign: 'right', lineHeight: 1.3 }}>{loginError}</span>
+                )}
+              </div>
             )}
 
             {/* Mobile: refresh + theme */}
