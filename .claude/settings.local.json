@@ -7,5 +7,18 @@
       "Read(//c/Users/aboam/**)",
       "Read(//c/Users/aboam/OneDrive/Desktop/**)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(git push*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/skills/fahad-guardian/scripts/pre-push-check.sh"
+          }
+        ]
+      }
+    ]
   }
 }
