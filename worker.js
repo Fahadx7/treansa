@@ -219,44 +219,102 @@ function dateStr(d) {
   return d.toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+function parseStooqCSV(csv, symbol) {
+  const lines = csv.trim().split('\n');
+  // Validate it's actually CSV (first line should be header with Date)
+  if (!lines[0] || !lines[0].toLowerCase().startsWith('date')) return null;
+  const rows = lines.slice(1);
+  if (rows.length < 2) return null;
+  const quotes = rows.map(line => {
+    const [date, open, high, low, close, volume] = line.split(',');
+    return {
+      date:   new Date(date).toISOString(),
+      open:   parseFloat(open)   || 0,
+      high:   parseFloat(high)   || 0,
+      low:    parseFloat(low)    || 0,
+      close:  parseFloat(close)  || 0,
+      volume: parseFloat(volume) || 0,
+    };
+  }).filter(q => q.close > 0);
+  if (quotes.length === 0) return null;
+  const last = quotes[quotes.length - 1];
+  return {
+    success: true,
+    meta: { symbol, regularMarketPrice: last.close, currency: 'SAR' },
+    quotes,
+    source: 'stooq',
+  };
+}
+
 async function fetchChartFromStooq(symbol, range) {
-  // stooq uses '^tasi' (raw ^, not encoded) and '.sa' for Saudi stocks
   const s = symbol.toLowerCase().replace('.sr', '.sa');
   const cfg = STOOQ_CFG[range] ?? STOOQ_CFG['1mo'];
   const d2 = new Date();
   const d1 = new Date(Date.now() - cfg.days * 86400000);
-  // Do NOT encodeURIComponent the symbol — stooq needs '^tasi' literally
-  const url = `https://stooq.com/q/d/l/?s=${s}&d1=${dateStr(d1)}&d2=${dateStr(d2)}&i=${cfg.interval}`;
+  // stooq needs ^ literally (not %5E)
+  const stooqUrl = `https://stooq.com/q/d/l/?s=${s}&d1=${dateStr(d1)}&d2=${dateStr(d2)}&i=${cfg.interval}`;
+  const h = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Referer': 'https://stooq.com/',
+  };
+
+  // Attempt 1: stooq direct
   try {
-    const res = await fetchWithTimeout(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/csv,*/*' },
-    }, 8000);
-    if (!res || !res.ok) return null;
-    const csv = await res.text();
-    const lines = csv.trim().split('\n').slice(1); // skip header row
-    if (lines.length < 2) return null;
-    const quotes = lines.map(line => {
-      const [date, open, high, low, close, volume] = line.split(',');
-      return {
-        date:   new Date(date).toISOString(),
-        open:   parseFloat(open)   || 0,
-        high:   parseFloat(high)   || 0,
-        low:    parseFloat(low)    || 0,
-        close:  parseFloat(close)  || 0,
-        volume: parseFloat(volume) || 0,
-      };
-    }).filter(q => q.close > 0);
-    if (quotes.length === 0) return null;
-    const last = quotes[quotes.length - 1];
-    return {
-      success: true,
-      meta: { symbol, regularMarketPrice: last.close, currency: 'SAR' },
-      quotes,
-      source: 'stooq',
-    };
-  } catch {
-    return null;
-  }
+    const res = await fetchWithTimeout(stooqUrl, { headers: h }, 8000);
+    if (res?.ok) {
+      const csv = await res.text();
+      const parsed = parseStooqCSV(csv, symbol);
+      if (parsed) return parsed;
+    }
+  } catch { /* try proxy */ }
+
+  // Attempt 2: allorigins proxy → stooq
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(stooqUrl)}`;
+    const res = await fetchWithTimeout(proxyUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    }, 10000);
+    if (res?.ok) {
+      const wrapper = await res.json();
+      const parsed = parseStooqCSV(wrapper?.contents ?? '', symbol);
+      if (parsed) return parsed;
+    }
+  } catch { /* try yahoo proxy */ }
+
+  // Attempt 3: allorigins proxy → Yahoo Finance
+  try {
+    const cfg2 = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
+    const p1 = cfg2.period1();
+    const p2 = Math.floor(Date.now() / 1000);
+    const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${p1}&period2=${p2}&interval=${cfg2.interval}`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`;
+    const res = await fetchWithTimeout(proxyUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    }, 10000);
+    if (res?.ok) {
+      const wrapper = await res.json();
+      const data = JSON.parse(wrapper?.contents ?? 'null');
+      const result = data?.chart?.result?.[0];
+      if (result?.timestamp?.length > 0) {
+        const timestamps = result.timestamp;
+        const q = result.indicators?.quote?.[0] ?? {};
+        const quotes = timestamps.map((t, i) => ({
+          date:   new Date(t * 1000).toISOString(),
+          open:   q.open?.[i]   ?? 0,
+          high:   q.high?.[i]   ?? 0,
+          low:    q.low?.[i]    ?? 0,
+          close:  q.close?.[i]  ?? 0,
+          volume: q.volume?.[i] ?? 0,
+        })).filter(x => x.close > 0);
+        if (quotes.length > 0) {
+          return { success: true, meta: result.meta, quotes, source: 'yahoo-proxy' };
+        }
+      }
+    }
+  } catch { /* all failed */ }
+
+  return null;
 }
 
 async function handleStockChart(url) {
