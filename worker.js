@@ -205,36 +205,44 @@ const RANGE_MAP = {
   '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
 };
 
-// Map range → days back for stooq fallback
-const STOOQ_DAYS = { '1d': 2, '1w': 7, '1mo': 30, '6mo': 180, '1y': 365, '5y': 1825 };
+// Stooq config per range
+const STOOQ_CFG = {
+  '1d':  { days: 5,    interval: 'd' },
+  '1w':  { days: 7,    interval: 'd' },
+  '1mo': { days: 30,   interval: 'd' },
+  '6mo': { days: 180,  interval: 'd' },
+  '1y':  { days: 365,  interval: 'w' },
+  '5y':  { days: 1825, interval: 'm' },
+};
 
 function dateStr(d) {
   return d.toISOString().slice(0, 10).replace(/-/g, '');
 }
 
 async function fetchChartFromStooq(symbol, range) {
-  // Stooq uses '^tasi' for TASI; Saudi stocks as '2222.sa' etc. — best effort
+  // stooq uses '^tasi' (raw ^, not encoded) and '.sa' for Saudi stocks
   const s = symbol.toLowerCase().replace('.sr', '.sa');
-  const days = STOOQ_DAYS[range] ?? 30;
+  const cfg = STOOQ_CFG[range] ?? STOOQ_CFG['1mo'];
   const d2 = new Date();
-  const d1 = new Date(Date.now() - days * 86400000);
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&d1=${dateStr(d1)}&d2=${dateStr(d2)}&i=d`;
+  const d1 = new Date(Date.now() - cfg.days * 86400000);
+  // Do NOT encodeURIComponent the symbol — stooq needs '^tasi' literally
+  const url = `https://stooq.com/q/d/l/?s=${s}&d1=${dateStr(d1)}&d2=${dateStr(d2)}&i=${cfg.interval}`;
   try {
     const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/csv,*/*' },
     }, 8000);
-    if (!res.ok) return null;
+    if (!res || !res.ok) return null;
     const csv = await res.text();
-    const lines = csv.trim().split('\n').slice(1); // skip header
+    const lines = csv.trim().split('\n').slice(1); // skip header row
     if (lines.length < 2) return null;
     const quotes = lines.map(line => {
       const [date, open, high, low, close, volume] = line.split(',');
       return {
-        date: new Date(date).toISOString(),
-        open: parseFloat(open) || 0,
-        high: parseFloat(high) || 0,
-        low:  parseFloat(low)  || 0,
-        close: parseFloat(close) || 0,
+        date:   new Date(date).toISOString(),
+        open:   parseFloat(open)   || 0,
+        high:   parseFloat(high)   || 0,
+        low:    parseFloat(low)    || 0,
+        close:  parseFloat(close)  || 0,
         volume: parseFloat(volume) || 0,
       };
     }).filter(q => q.close > 0);
