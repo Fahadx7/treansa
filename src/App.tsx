@@ -43,7 +43,7 @@ import IntelligenceEngine from './pages/IntelligenceEngine';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
-import { FixedSizeList } from 'react-window';
+import { List as FixedSizeList } from 'react-window';
 const AutoSizer = ({ children }: { children: (size: { width: number; height: number }) => React.ReactNode }) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
@@ -706,8 +706,32 @@ const MarketIndexModal = ({
   onClose: () => void;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [chartPeriod, setChartPeriod] = useState<ChartRange>('1mo');
+  const [chartHistory, setChartHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
-  const chartData = buildMiniHistoryFromPrices(history.length > 1 ? history : [indexData.price]);
+  useEffect(() => {
+    const load = async () => {
+      setLoadingHistory(true);
+      setHistoryError(null);
+      try {
+        const { meta, quotes } = await fetchChart('^TASI', chartPeriod);
+        const hist = buildHistoryFromChart(meta, quotes, chartPeriod);
+        if (hist.length > 0) {
+          setChartHistory(hist);
+        } else {
+          setHistoryError('لا توجد بيانات متاحة حالياً');
+        }
+      } catch {
+        setHistoryError('فشل جلب البيانات');
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    load();
+  }, [chartPeriod]);
+
   const syntheticQuotes = buildSyntheticQuotesFromPrices(history.length > 1 ? history : [indexData.price, indexData.price]);
   const indicators = computeIndicators(syntheticQuotes);
   const patterns = detectChartPatternsFromSeries(history.length > 1 ? history : [indexData.price], indexData.price);
@@ -798,30 +822,62 @@ const MarketIndexModal = ({
               <div className="space-y-4">
                 <div className="rounded-3xl border border-app-border bg-app-bg/20 p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-sm font-bold text-app-text">السجل اللحظي للمؤشر</div>
-                      <div className="text-[11px] text-app-text-muted">يبنى من آخر نقاط التحديث المتراكمة داخل الجلسة الحالية</div>
-                    </div>
-                    <div className={`text-xs font-bold px-2.5 py-1 rounded-full ${isUp ? 'bg-emerald-500/12 text-emerald-400' : 'bg-rose-500/12 text-rose-400'}`}>
-                      {isUp ? 'ميل صاعد' : 'ميل هابط'}
+                    <div className="text-sm font-bold text-app-text">الرسم البياني التاريخي</div>
+                    {/* Period pill tabs — same as stock modal */}
+                    <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      {([
+                        { id: '1d',  label: 'يوم'    },
+                        { id: '1w',  label: 'أسبوع'  },
+                        { id: '1mo', label: 'شهر'    },
+                        { id: '6mo', label: '6 أشهر' },
+                        { id: '1y',  label: 'سنة'    },
+                        { id: '5y',  label: '5 سنوات'},
+                      ] as { id: ChartRange; label: string }[]).map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => setChartPeriod(p.id)}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            borderRadius: 8,
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            background: chartPeriod === p.id ? '#00d4aa' : 'transparent',
+                            color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="h-[360px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData}>
-                        <defs>
-                          <linearGradient id="tasiHistoryFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.28}/>
-                            <stop offset="95%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.02}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
-                        <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} />
-                        <YAxis stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} orientation="right" domain={['auto', 'auto']} />
-                        <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)' }} />
-                        <Area type="monotone" dataKey="price" stroke={isUp ? '#10b981' : '#ef4444'} fill="url(#tasiHistoryFill)" strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                  <div className="h-[360px] relative">
+                    {loadingHistory ? (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-app-text-muted animate-spin" />
+                      </div>
+                    ) : historyError ? (
+                      <div className="absolute inset-0 flex items-center justify-center text-app-text-muted text-xs">{historyError}</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartHistory}>
+                          <defs>
+                            <linearGradient id="tasiHistoryFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.28}/>
+                              <stop offset="95%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.02}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
+                          <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                          <YAxis stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} orientation="right" domain={['auto', 'auto']} />
+                          <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)', fontSize: '12px', color: 'var(--color-app-text)' }} itemStyle={{ color: 'var(--color-app-text)' }} />
+                          <Area type="monotone" dataKey="price" stroke={isUp ? '#10b981' : '#ef4444'} fill="url(#tasiHistoryFill)" strokeWidth={2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </div>
 
