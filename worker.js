@@ -858,6 +858,17 @@ export default {
     // Handle CORS preflight for POST endpoints
     if (request.method === 'OPTIONS') return corsHeaders();
 
+    // Diagnostic endpoint — checks AI binding and connectivity
+    if (url.pathname === '/api/health') {
+      return json({
+        ok: true,
+        ai: !!env.AI,
+        assets: !!env.ASSETS,
+        ts: new Date().toISOString(),
+        cf: request.cf ? { country: request.cf.country, colo: request.cf.colo } : null,
+      });
+    }
+
     // GET endpoints
     if (url.pathname === '/api/tasi-index')               return handleTasiIndex();
     if (url.pathname === '/api/commodities')              return handleCommodities();
