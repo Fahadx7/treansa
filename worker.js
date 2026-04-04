@@ -5,6 +5,29 @@
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
+// Fetch with timeout (default 8s) — prevents hanging on slow external APIs
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Yahoo Finance fetch with query1 → query2 fallback
+async function yahooFetch(path, headers = {}) {
+  const base1 = `https://query1.finance.yahoo.com${path}`;
+  const base2 = `https://query2.finance.yahoo.com${path}`;
+  const h = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', ...headers };
+  try {
+    const res = await fetchWithTimeout(base1, { headers: h }, 7000);
+    if (res.ok) return res;
+  } catch { /* fallthrough to query2 */ }
+  return fetchWithTimeout(base2, { headers: h }, 7000);
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -42,9 +65,9 @@ async function handleTasiIndex() {
   if (tasiCache && Date.now() - tasiCache.ts < TTL) return json(tasiCache.data);
 
   try {
-    const res = await fetch('https://stooq.com/q/l/?s=^tasi&f=sd2t2ohlcv&h&e=json', {
+    const res = await fetchWithTimeout('https://stooq.com/q/l/?s=^tasi&f=sd2t2ohlcv&h&e=json', {
       headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' },
-    });
+    }, 6000);
     if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
 
     const data = await res.json();
@@ -91,9 +114,8 @@ async function handleCommodities() {
 
   await Promise.all(items.map(async ({ key, symbol }) => {
     try {
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
-        { headers: { 'User-Agent': 'Mozilla/5.0' } },
+      const res = await yahooFetch(
+        `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
       );
       if (!res.ok) return;
       const data = await res.json();
@@ -118,9 +140,8 @@ async function handleStockPrice(url) {
   await Promise.all(symbols.slice(0, 50).map(async (symbol) => {
     try {
       // Use 1mo range to get volume history for avgVolume calculation
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`,
-        { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+      const res = await yahooFetch(
+        `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`,
       );
       if (!res.ok) return;
       const data = await res.json();
@@ -186,9 +207,8 @@ async function handleStockChart(url) {
   const period2 = Math.floor(Date.now() / 1000);
 
   try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${cfg.interval}`,
-      { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+    const res = await yahooFetch(
+      `/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${cfg.interval}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data   = await res.json();
@@ -480,9 +500,8 @@ function detectAllPatterns(quotes) {
 
 async function fetchAndEnrich(symbol) {
   try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`,
-      { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } },
+    const res = await yahooFetch(
+      `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`,
     );
     if (!res.ok) return null;
     const data = await res.json();
@@ -563,7 +582,7 @@ const CF_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function callAI(env, prompt) {
   const ai = env.AI;
-  if (!ai) throw new Error('Workers AI غير مفعّل — أضف ai binding في wrangler.toml');
+  if (!ai) return '⚠️ خدمة الذكاء الاصطناعي غير مفعّلة حالياً. يرجى التواصل مع الدعم لتفعيل Workers AI binding في لوحة Cloudflare.';
   const res = await ai.run(CF_MODEL, {
     messages: [
       { role: 'system', content: 'أنت محلل مالي خبير في السوق السعودي (تاسي). أجب دائماً باللغة العربية بشكل مختصر ومهني.' },
@@ -577,7 +596,7 @@ async function callAI(env, prompt) {
 
 async function callAIChat(env, messages) {
   const ai = env.AI;
-  if (!ai) throw new Error('Workers AI غير مفعّل');
+  if (!ai) return 'عذراً، خدمة المستشار الذكي غير متاحة حالياً. يرجى التحقق من إعدادات Workers AI في لوحة Cloudflare.';
   const res = await ai.run(CF_MODEL, {
     messages: [
       { role: 'system', content: `أنت "المستشار الذكي" — محلل مالي خبير متخصص في السوق السعودي (تاسي).
