@@ -325,6 +325,28 @@ async function fetchChartFromStooq(symbol, range) {
   return null;
 }
 
+// Spark range map — Yahoo Finance v7 spark uses named ranges
+const SPARK_RANGE = { '1d':'1d', '1w':'5d', '1mo':'1mo', '6mo':'6mo', '1y':'1y', '5y':'5y' };
+const SPARK_INTERVAL = { '1d':'5m', '1w':'1h', '1mo':'1d', '6mo':'1d', '1y':'1wk', '5y':'1mo' };
+
+function quotesFromSpark(data, symbol) {
+  const result = data?.spark?.result?.[0]?.response?.[0];
+  if (!result) return null;
+  const timestamps = result.timestamp ?? [];
+  const closes     = result.indicators?.quote?.[0]?.close ?? result.close ?? [];
+  if (timestamps.length === 0 || closes.length === 0) return null;
+  const quotes = timestamps.map((t, i) => ({
+    date:   new Date(t * 1000).toISOString(),
+    open:   closes[i] ?? 0,
+    high:   closes[i] ?? 0,
+    low:    closes[i] ?? 0,
+    close:  closes[i] ?? 0,
+    volume: 0,
+  })).filter(q => q.close > 0);
+  if (quotes.length === 0) return null;
+  return { success: true, meta: result.meta ?? { symbol }, quotes, source: 'spark' };
+}
+
 async function handleStockChart(url) {
   const symbol = url.searchParams.get('symbol') ?? '';
   const range  = url.searchParams.get('range')  ?? '1mo';
@@ -338,42 +360,53 @@ async function handleStockChart(url) {
   const period1 = cfg.period1();
   const period2 = Math.floor(Date.now() / 1000);
 
-  // Try Yahoo Finance first
+  // Source 1: Yahoo Finance v8 chart (JSON)
   try {
     const res = await yahooFetch(
       `/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${cfg.interval}`,
     );
-    if (res && res.ok) {
+    if (res?.ok) {
       const data   = await res.json();
       const result = data?.chart?.result?.[0];
-      if (result) {
-        const timestamps = result.timestamp ?? [];
-        const quote      = result.indicators?.quote?.[0] ?? {};
-        const closes     = quote.close  ?? [];
-        const opens      = quote.open   ?? [];
-        const highs      = quote.high   ?? [];
-        const lows       = quote.low    ?? [];
-        const volumes    = quote.volume ?? [];
-
-        const quotes = timestamps.map((t, i) => ({
+      if (result?.timestamp?.length > 0) {
+        const quote = result.indicators?.quote?.[0] ?? {};
+        const quotes = result.timestamp.map((t, i) => ({
           date:   new Date(t * 1000).toISOString(),
-          open:   opens[i]   ?? 0,
-          high:   highs[i]   ?? 0,
-          low:    lows[i]    ?? 0,
-          close:  closes[i]  ?? 0,
-          volume: volumes[i] ?? 0,
+          open:   quote.open?.[i]   ?? 0,
+          high:   quote.high?.[i]   ?? 0,
+          low:    quote.low?.[i]    ?? 0,
+          close:  quote.close?.[i]  ?? 0,
+          volume: quote.volume?.[i] ?? 0,
         })).filter(q => q.close > 0);
-
         if (quotes.length > 0) {
+          console.log(`[chart] yahoo v8 OK: ${quotes.length}`);
           const payload = { success: true, meta: result.meta, quotes };
           chartCache.set(cacheKey, { data: payload, ts: Date.now() });
           return json(payload);
         }
       }
     }
-  } catch { /* fallthrough to stooq */ }
+  } catch { /* fallthrough */ }
 
-  // Fallback: Stooq.com
+  // Source 2: Yahoo Finance v7 spark (lighter endpoint, close prices only)
+  try {
+    const sRange = SPARK_RANGE[range] ?? '1mo';
+    const sIntvl = SPARK_INTERVAL[range] ?? '1d';
+    const res = await yahooFetch(
+      `/v7/finance/spark?symbols=${encodeURIComponent(symbol)}&range=${sRange}&interval=${sIntvl}`,
+    );
+    if (res?.ok) {
+      const data = await res.json();
+      const parsed = quotesFromSpark(data, symbol);
+      if (parsed) {
+        console.log(`[chart] yahoo spark OK: ${parsed.quotes.length}`);
+        chartCache.set(cacheKey, { data: parsed, ts: Date.now() });
+        return json(parsed);
+      }
+    }
+  } catch { /* fallthrough */ }
+
+
   const stooqData = await fetchChartFromStooq(symbol, range);
   if (stooqData) {
     chartCache.set(cacheKey, { data: stooqData, ts: Date.now() });
