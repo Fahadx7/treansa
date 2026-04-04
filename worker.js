@@ -16,16 +16,28 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = 8000) {
   }
 }
 
-// Yahoo Finance fetch with query1 → query2 fallback
+// Yahoo Finance fetch with query1 → query2 fallback + full browser headers
 async function yahooFetch(path, headers = {}) {
   const base1 = `https://query1.finance.yahoo.com${path}`;
   const base2 = `https://query2.finance.yahoo.com${path}`;
-  const h = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', ...headers };
+  const h = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Referer': 'https://finance.yahoo.com/',
+    'Origin': 'https://finance.yahoo.com',
+    ...headers,
+  };
   try {
     const res = await fetchWithTimeout(base1, { headers: h }, 7000);
     if (res.ok) return res;
   } catch { /* fallthrough to query2 */ }
-  return fetchWithTimeout(base2, { headers: h }, 7000);
+  try {
+    const res = await fetchWithTimeout(base2, { headers: h }, 7000);
+    if (res.ok) return res;
+  } catch { /* fallthrough to stooq */ }
+  return null;
 }
 
 function json(data, status = 200) {
@@ -117,7 +129,7 @@ async function handleCommodities() {
       const res = await yahooFetch(
         `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
       );
-      if (!res.ok) return;
+      if (!res?.ok) return;
       const data = await res.json();
       const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
       if (price) result[key] = price;
@@ -143,7 +155,7 @@ async function handleStockPrice(url) {
       const res = await yahooFetch(
         `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`,
       );
-      if (!res.ok) return;
+      if (!res?.ok) return;
       const data = await res.json();
       const q = data?.chart?.result?.[0];
       if (!q) return;
@@ -182,7 +194,7 @@ async function handleStockPrice(url) {
   return json({ success: true, result: results });
 }
 
-// ─── Stock Chart (Yahoo Finance) ─────────────────────────────────────────────
+// ─── Stock Chart (Yahoo Finance + Stooq fallback) ────────────────────────────
 
 const RANGE_MAP = {
   '1d':  { period1: () => Math.floor(Date.now() / 1000) - 86400,     interval: '5m'  },
@@ -192,6 +204,52 @@ const RANGE_MAP = {
   '1y':  { period1: () => Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk' },
   '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
 };
+
+// Map range → days back for stooq fallback
+const STOOQ_DAYS = { '1d': 2, '1w': 7, '1mo': 30, '6mo': 180, '1y': 365, '5y': 1825 };
+
+function dateStr(d) {
+  return d.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+async function fetchChartFromStooq(symbol, range) {
+  // Stooq uses '^tasi' for TASI; Saudi stocks as '2222.sa' etc. — best effort
+  const s = symbol.toLowerCase().replace('.sr', '.sa');
+  const days = STOOQ_DAYS[range] ?? 30;
+  const d2 = new Date();
+  const d1 = new Date(Date.now() - days * 86400000);
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&d1=${dateStr(d1)}&d2=${dateStr(d2)}&i=d`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/csv,*/*' },
+    }, 8000);
+    if (!res.ok) return null;
+    const csv = await res.text();
+    const lines = csv.trim().split('\n').slice(1); // skip header
+    if (lines.length < 2) return null;
+    const quotes = lines.map(line => {
+      const [date, open, high, low, close, volume] = line.split(',');
+      return {
+        date: new Date(date).toISOString(),
+        open: parseFloat(open) || 0,
+        high: parseFloat(high) || 0,
+        low:  parseFloat(low)  || 0,
+        close: parseFloat(close) || 0,
+        volume: parseFloat(volume) || 0,
+      };
+    }).filter(q => q.close > 0);
+    if (quotes.length === 0) return null;
+    const last = quotes[quotes.length - 1];
+    return {
+      success: true,
+      meta: { symbol, regularMarketPrice: last.close, currency: 'SAR' },
+      quotes,
+      source: 'stooq',
+    };
+  } catch {
+    return null;
+  }
+}
 
 async function handleStockChart(url) {
   const symbol = url.searchParams.get('symbol') ?? '';
@@ -206,38 +264,49 @@ async function handleStockChart(url) {
   const period1 = cfg.period1();
   const period2 = Math.floor(Date.now() / 1000);
 
+  // Try Yahoo Finance first
   try {
     const res = await yahooFetch(
       `/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${cfg.interval}`,
     );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data   = await res.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) throw new Error('No data');
+    if (res && res.ok) {
+      const data   = await res.json();
+      const result = data?.chart?.result?.[0];
+      if (result) {
+        const timestamps = result.timestamp ?? [];
+        const quote      = result.indicators?.quote?.[0] ?? {};
+        const closes     = quote.close  ?? [];
+        const opens      = quote.open   ?? [];
+        const highs      = quote.high   ?? [];
+        const lows       = quote.low    ?? [];
+        const volumes    = quote.volume ?? [];
 
-    const timestamps = result.timestamp ?? [];
-    const quote      = result.indicators?.quote?.[0] ?? {};
-    const closes     = quote.close  ?? [];
-    const opens      = quote.open   ?? [];
-    const highs      = quote.high   ?? [];
-    const lows       = quote.low    ?? [];
-    const volumes    = quote.volume ?? [];
+        const quotes = timestamps.map((t, i) => ({
+          date:   new Date(t * 1000).toISOString(),
+          open:   opens[i]   ?? 0,
+          high:   highs[i]   ?? 0,
+          low:    lows[i]    ?? 0,
+          close:  closes[i]  ?? 0,
+          volume: volumes[i] ?? 0,
+        })).filter(q => q.close > 0);
 
-    const quotes = timestamps.map((t, i) => ({
-      date:   new Date(t * 1000).toISOString(),
-      open:   opens[i]   ?? 0,
-      high:   highs[i]   ?? 0,
-      low:    lows[i]    ?? 0,
-      close:  closes[i]  ?? 0,
-      volume: volumes[i] ?? 0,
-    })).filter(q => q.close > 0);
+        if (quotes.length > 0) {
+          const payload = { success: true, meta: result.meta, quotes };
+          chartCache.set(cacheKey, { data: payload, ts: Date.now() });
+          return json(payload);
+        }
+      }
+    }
+  } catch { /* fallthrough to stooq */ }
 
-    const payload = { success: true, meta: result.meta, quotes };
-    chartCache.set(cacheKey, { data: payload, ts: Date.now() });
-    return json(payload);
-  } catch (e) {
-    return json({ success: false, error: e.message }, 500);
+  // Fallback: Stooq.com
+  const stooqData = await fetchChartFromStooq(symbol, range);
+  if (stooqData) {
+    chartCache.set(cacheKey, { data: stooqData, ts: Date.now() });
+    return json(stooqData);
   }
+
+  return json({ success: false, error: 'فشل جلب البيانات من جميع المصادر' }, 500);
 }
 
 // ─── Server-side Technical Indicators ────────────────────────────────────────
@@ -503,7 +572,7 @@ async function fetchAndEnrich(symbol) {
     const res = await yahooFetch(
       `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`,
     );
-    if (!res.ok) return null;
+    if (!res?.ok) return null;
     const data = await res.json();
     const result = data?.chart?.result?.[0];
     if (!result || !result.timestamp) return null;
