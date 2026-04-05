@@ -1,34 +1,38 @@
 /**
  * /api/stock-price — Cloudflare Pages Function
- * Source: Stooq (free, no API key)
- * Saudi symbol mapping: "2222.SR" → "2222.sa"
+ * Source: Twelve Data (requires TWELVE_DATA_API_KEY env var)
+ * Saudi symbol mapping: "2222.SR" → "2222:XSAU", "^TASI" → "TASI:XSAU"
  *
  * Query params:
  *   symbols — comma-separated e.g. "2222.SR,1010.SR"
  *
- * Response shape mirrors the Yahoo Finance / Twelve Data format the frontend expects:
- *   { success: true, result: QuoteResult[] }
+ * Response: { success: true, result: QuoteResult[] }
  */
 
+const BASE  = 'https://api.twelvedata.com';
 const TTL   = 5 * 60 * 1000;
 const BATCH = 50;
 
 const quoteCache = new Map();
 
-/** "2222.SR" → "2222.sa" */
-function toStooq(symbol) {
-  return symbol.replace(/\.SR$/i, '.sa');
+/** "2222.SR" → "2222:XSAU", "^TASI" / "%5ETASI" → "TASI:XSAU" */
+function toTwelveData(raw) {
+  const decoded = decodeURIComponent(raw);
+  return decoded
+    .replace(/^\^/, '')
+    .replace(/\.SR$/i, '') + ':XSAU';
 }
 
 function mapQuote(originalSym, q) {
-  const close  = parseFloat(String(q.close  ?? '0'));
-  const open   = parseFloat(String(q.open   ?? q.close ?? '0'));
-  const high   = parseFloat(String(q.high   ?? q.close ?? '0'));
-  const low    = parseFloat(String(q.low    ?? q.close ?? '0'));
+  const close  = parseFloat(String(q.close  ?? q.previous_close ?? '0'));
+  const open   = parseFloat(String(q.open   ?? q.previous_close ?? String(close)));
+  const high   = parseFloat(String(q.high   ?? String(close)));
+  const low    = parseFloat(String(q.low    ?? String(close)));
   const volume = parseInt(String(q.volume   ?? '0'), 10);
+  const prev   = parseFloat(String(q.previous_close ?? String(open)));
 
-  const change        = close - open;
-  const changePercent = open !== 0 ? (change / open) * 100 : 0;
+  const change        = close - prev;
+  const changePercent = prev !== 0 ? (change / prev) * 100 : 0;
 
   return {
     symbol:                     originalSym,
@@ -64,7 +68,8 @@ export async function onRequest(context) {
     return respond({ success: false, error: 'symbols required' }, 400);
   }
 
-  const now     = Date.now();
+  const apiKey = context.env?.TWELVE_DATA_API_KEY ?? '';
+  const now    = Date.now();
   const results = [];
   const toFetch = [];
 
@@ -75,24 +80,32 @@ export async function onRequest(context) {
   }
 
   for (let i = 0; i < toFetch.length; i += BATCH) {
-    const batch    = toFetch.slice(i, i + BATCH);
-    const stooqStr = batch.map(toStooq).join(',');
+    const batch  = toFetch.slice(i, i + BATCH);
+    const tdSyms = batch.map(toTwelveData).join(',');
 
     try {
       const res = await fetch(
-        `https://stooq.com/q/l/?s=${encodeURIComponent(stooqStr)}&f=sd2t2ohlcv&h&e=json`,
-        { headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' } },
+        `${BASE}/quote?symbol=${encodeURIComponent(tdSyms)}&apikey=${apiKey}`,
       );
       if (!res.ok) continue;
 
       const data = await res.json();
+      if (data.status === 'error') continue;
 
-      for (const originalSym of batch) {
-        const stooqSym = toStooq(originalSym).toLowerCase();
-        const q = (data.symbols ?? []).find(
-          s => s.symbol.toLowerCase() === stooqSym,
-        );
-        if (!q || !q.close || parseFloat(String(q.close)) === 0) continue;
+      // Twelve Data returns a single object for one symbol, or keyed object for multiple
+      const entries = batch.length === 1
+        ? [[toTwelveData(batch[0]), data]]
+        : Object.entries(data);
+
+      for (const [tdSym, q] of entries) {
+        if (!q || q.status === 'error') continue;
+        const close = parseFloat(String(q.close ?? '0'));
+        if (!close || close === 0) continue;
+
+        // Match back to original symbol
+        const origIdx = batch.findIndex(s => toTwelveData(s) === tdSym);
+        if (origIdx === -1) continue;
+        const originalSym = batch[origIdx];
 
         const mapped = mapQuote(originalSym, q);
         quoteCache.set(originalSym, { data: mapped, ts: now });

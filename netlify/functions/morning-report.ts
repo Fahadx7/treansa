@@ -1,10 +1,13 @@
 /**
  * morning-report.ts
  * Netlify Scheduled Function — runs at 06:30 UTC (09:30 Riyadh) Sun–Thu
- * Generates an Arabic morning briefing and sends it via Telegram.
+ * Generates an Arabic morning briefing and sends it via Telegram + Email.
+ * Data source: Twelve Data (TWELVE_DATA_API_KEY)
  */
 
 import { SAUDI_STOCKS } from '../../src/symbols';
+
+const TD_BASE = 'https://api.twelvedata.com';
 
 const SHORT_NAME_AR: Record<string, string> = {
   'Yanbu National Petrochemical Co': 'ينساب',
@@ -20,22 +23,17 @@ const SHORT_NAME_AR: Record<string, string> = {
 };
 
 /** Return Arabic name — checks shortName map first, then symbol code map, then falls back. */
-function arabicName(symbol: string, shortName?: string): string {
-  const code = symbol.replace('.SR', '');
-  return (shortName && SHORT_NAME_AR[shortName]) || SAUDI_STOCKS[code] || shortName || symbol;
+function arabicName(symbol: string, name?: string): string {
+  const code = symbol.replace(/\.SR$/i, '').replace(/:XSAU$/i, '');
+  return (name && SHORT_NAME_AR[name]) || SAUDI_STOCKS[code] || name || symbol;
 }
 
-// ─── Yahoo Finance helpers ───────────────────────────────────────────────────
+// ─── Twelve Data helpers ──────────────────────────────────────────────────────
 
-const YF_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-const YF_HEADERS: Record<string, string> = {
-  'User-Agent': YF_UA,
-  Accept: 'application/json',
-  'Accept-Language': 'en-US,en;q=0.9',
-};
+/** "2222.SR" → "2222:XSAU" */
+function toTD(symbol: string): string {
+  return symbol.replace(/\.SR$/i, '') + ':XSAU';
+}
 
 async function fetchWithTimeout(
   url: string,
@@ -48,31 +46,6 @@ async function fetchWithTimeout(
     return await fetch(url, { ...rest, signal: ctrl.signal });
   } finally {
     clearTimeout(timer);
-  }
-}
-
-/** Fetch a crumb + cookies pair for authenticated YF requests. */
-async function getYFCrumb(): Promise<{ crumb: string; cookies: string } | null> {
-  try {
-    const r1 = await fetchWithTimeout('https://fc.yahoo.com', {
-      headers: { 'User-Agent': YF_UA },
-      redirect: 'follow',
-    });
-    const cookies = (r1.headers.get('set-cookie') || '')
-      .split(',')
-      .map((c) => c.split(';')[0].trim())
-      .filter(Boolean)
-      .join('; ');
-
-    const r2 = await fetchWithTimeout(
-      'https://query2.finance.yahoo.com/v1/test/getcrumb',
-      { headers: { 'User-Agent': YF_UA, Cookie: cookies } },
-    );
-    if (!r2.ok) return null;
-    const crumb = (await r2.text()).trim();
-    return { crumb, cookies };
-  } catch {
-    return null;
   }
 }
 
@@ -96,81 +69,91 @@ interface CommodityData {
   changePercent: number;
 }
 
-/** Fetch commodity prices (Brent Oil, Gold). Returns empty array on failure. */
-async function fetchCommodities(
-  crumb: string,
-  cookies: string,
-): Promise<CommodityData[]> {
-  const symbols = ['BZ=F', 'GC=F'];
-  const crumbQ = crumb ? `&crumb=${encodeURIComponent(crumb)}` : '';
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}${crumbQ}`;
+/** Fetch TASI index from Twelve Data. */
+async function fetchTASI(apiKey: string): Promise<TasiData | null> {
   try {
-    const res = await fetchWithTimeout(url, {
-      headers: { ...YF_HEADERS, Cookie: cookies },
-      timeoutMs: 8000,
-    });
-    if (!res.ok) return [];
-    const data: any = await res.json();
-    const results: any[] = data?.quoteResponse?.result ?? [];
-    return results
-      .filter((q) => typeof q.regularMarketPrice === 'number')
-      .map((q) => ({
-        symbol: q.symbol as string,
-        price: q.regularMarketPrice as number,
-        changePercent: (q.regularMarketChangePercent as number) ?? 0,
-      }));
-  } catch {
-    return [];
-  }
-}
-
-/** Fetch a batch of YF quotes. Returns an empty array on failure. */
-async function fetchQuotes(
-  symbols: string[],
-  crumb: string,
-  cookies: string,
-): Promise<StockQuote[]> {
-  const list = symbols.join(',');
-  const crumbQ = crumb ? `&crumb=${encodeURIComponent(crumb)}` : '';
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}${crumbQ}`;
-  try {
-    const res = await fetchWithTimeout(url, {
-      headers: { ...YF_HEADERS, Cookie: cookies },
-      timeoutMs: 10000,
-    });
-    if (!res.ok) return [];
-    const data: any = await res.json();
-    return (data?.quoteResponse?.result || []) as StockQuote[];
-  } catch {
-    return [];
-  }
-}
-
-/** Fetch TASI index via v8 chart API (most reliable for indices). */
-async function fetchTASI(
-  crumb: string,
-  cookies: string,
-): Promise<TasiData | null> {
-  try {
-    const period1 = Math.floor(Date.now() / 1000) - 7 * 86400;
-    const period2 = Math.floor(Date.now() / 1000);
-    const crumbQ = crumb ? `&crumb=${encodeURIComponent(crumb)}` : '';
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5ETASI?interval=1d&period1=${period1}&period2=${period2}${crumbQ}`;
-    const res = await fetchWithTimeout(url, {
-      headers: { ...YF_HEADERS, Cookie: cookies },
-      timeoutMs: 10000,
-    });
+    const res = await fetchWithTimeout(
+      `${TD_BASE}/quote?symbol=${encodeURIComponent('TASI:XSAU')}&apikey=${apiKey}`,
+      { timeoutMs: 10000 },
+    );
     if (!res.ok) return null;
-    const data: any = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    if (!meta) return null;
-    const price: number = meta.regularMarketPrice ?? meta.previousClose ?? 0;
-    const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price;
-    const change = price - prevClose;
-    const changePercent = prevClose ? (change / prevClose) * 100 : 0;
-    return { price, change, changePercent };
+    const q: any = await res.json();
+    if (q.status === 'error' || !q.close) return null;
+
+    const price    = parseFloat(q.close          ?? '0');
+    const prev     = parseFloat(q.previous_close ?? String(price));
+    const change   = price - prev;
+    const changePct = prev !== 0 ? (change / prev) * 100 : 0;
+    return { price, change, changePercent: changePct };
   } catch {
     return null;
+  }
+}
+
+/** Fetch a batch of Twelve Data quotes. Returns empty array on failure. */
+async function fetchQuotes(symbols: string[], apiKey: string): Promise<StockQuote[]> {
+  if (!symbols.length) return [];
+  const tdSyms = symbols.map(toTD).join(',');
+
+  try {
+    const res = await fetchWithTimeout(
+      `${TD_BASE}/quote?symbol=${encodeURIComponent(tdSyms)}&apikey=${apiKey}`,
+      { timeoutMs: 12000 },
+    );
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    if (data.status === 'error') return [];
+
+    // Single symbol → plain object; multiple → keyed by tdSym
+    const entries: [string, any][] = symbols.length === 1
+      ? [[toTD(symbols[0]), data]]
+      : Object.entries(data);
+
+    const results: StockQuote[] = [];
+    for (const [tdSym, q] of entries) {
+      if (!q || q.status === 'error') continue;
+      const close = parseFloat(String(q.close ?? '0'));
+      if (!close) continue;
+
+      const prev           = parseFloat(String(q.previous_close ?? String(close)));
+      const changePct      = prev !== 0 ? ((close - prev) / prev) * 100 : 0;
+      const origSym        = symbols.find(s => toTD(s) === tdSym) ?? tdSym;
+
+      results.push({
+        symbol:                     origSym,
+        shortName:                  q.name ?? origSym,
+        regularMarketPrice:         close,
+        regularMarketChangePercent: changePct,
+        regularMarketVolume:        parseInt(String(q.volume ?? '0'), 10),
+      });
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/** Fetch commodity prices from Twelve Data. */
+async function fetchCommodities(apiKey: string): Promise<CommodityData[]> {
+  try {
+    const res = await fetchWithTimeout(
+      `${TD_BASE}/price?symbol=${encodeURIComponent('BZ:COMEX,XAU/USD')}&apikey=${apiKey}`,
+      { timeoutMs: 8000 },
+    );
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    if (data.status === 'error') return [];
+
+    const results: CommodityData[] = [];
+    if (data['BZ:COMEX']?.price) {
+      results.push({ symbol: 'BZ:COMEX', price: parseFloat(data['BZ:COMEX'].price), changePercent: 0 });
+    }
+    if (data['XAU/USD']?.price) {
+      results.push({ symbol: 'XAU/USD', price: parseFloat(data['XAU/USD'].price), changePercent: 0 });
+    }
+    return results;
+  } catch {
+    return [];
   }
 }
 
@@ -199,10 +182,6 @@ function parseRssItems(xml: string, source: string): RssItem[] {
 async function fetchEconomicNews(): Promise<RssItem[]> {
   const feeds: Array<{ url: string; source: string }> = [
     {
-      url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5ETASI&region=SA&lang=en-US',
-      source: 'Yahoo Finance',
-    },
-    {
       url: 'https://news.google.com/rss/search?q=السوق+السعودي+تداول&hl=ar&gl=SA&ceid=SA:ar',
       source: 'Google News',
     },
@@ -215,7 +194,7 @@ async function fetchEconomicNews(): Promise<RssItem[]> {
   const results = await Promise.allSettled(
     feeds.map(({ url, source }) =>
       fetchWithTimeout(url, {
-        headers: { 'User-Agent': YF_UA, Accept: 'application/rss+xml, text/xml' },
+        headers: { Accept: 'application/rss+xml, text/xml' },
         timeoutMs: 6000,
       })
         .then((r) => (r.ok ? r.text() : ''))
@@ -229,7 +208,6 @@ async function fetchEconomicNews(): Promise<RssItem[]> {
     if (r.status === 'fulfilled') all.push(...r.value);
   }
 
-  // Deduplicate by title similarity (first word match)
   const seen = new Set<string>();
   return all.filter((item) => {
     const key = item.title.split(' ').slice(0, 4).join(' ').toLowerCase();
@@ -241,7 +219,6 @@ async function fetchEconomicNews(): Promise<RssItem[]> {
 
 // ─── Claude AI ───────────────────────────────────────────────────────────────
 
-/** Translate a single headline to Arabic using Claude. Falls back to original on error. */
 async function translateHeadline(title: string, apiKey: string): Promise<string> {
   try {
     const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
@@ -266,7 +243,6 @@ async function translateHeadline(title: string, apiKey: string): Promise<string>
   }
 }
 
-/** Translate all headlines in parallel. Returns original titles if API key missing. */
 async function translateHeadlines(titles: string[]): Promise<string[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return titles;
@@ -337,7 +313,6 @@ ${newsText || 'لا توجد أخبار'}
     const data: any = await res.json();
     const raw = (data?.content?.[0]?.text ?? '').trim();
     if (!raw) return 'تعذّر توليد التحليل.';
-    // Hard cap at 150 chars, cutting only at a sentence boundary
     if (raw.length <= 150) return raw;
     const cut = raw.slice(0, 150);
     const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('\u060C'), cut.lastIndexOf('!'), cut.lastIndexOf('\u061F'));
@@ -445,10 +420,7 @@ function buildEmailHtml(opts: {
 </html>`;
 }
 
-async function sendEmail(opts: {
-  subject: string;
-  html: string;
-}): Promise<void> {
+async function sendEmail(opts: { subject: string; html: string }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.error('[morning-report] RESEND_API_KEY not set — skipping email');
@@ -523,19 +495,18 @@ const ARABIC_MONTHS = [
 ];
 
 function riyadhNow(): Date {
-  // UTC+3
   return new Date(Date.now() + 3 * 3600_000);
 }
 
 function formatDateArabic(d: Date): string {
-  const day = ARABIC_DAYS[d.getUTCDay()] ?? '';
-  const dom = d.getUTCDate();
+  const day   = ARABIC_DAYS[d.getUTCDay()] ?? '';
+  const dom   = d.getUTCDate();
   const month = ARABIC_MONTHS[d.getUTCMonth()] ?? '';
-  const year = d.getUTCFullYear();
+  const year  = d.getUTCFullYear();
   return `${day} ${dom} ${month} ${year}`;
 }
 
-// ─── Saudi stock symbols (top 30 by market cap for speed) ─────────────────────
+// ─── Saudi stock symbols (top 30 by market cap) ───────────────────────────────
 
 const TOP_SAUDI_SYMBOLS = [
   '2222.SR', '1120.SR', '2010.SR', '2380.SR', '1180.SR',
@@ -551,48 +522,38 @@ const TOP_SAUDI_SYMBOLS = [
 export default async function handler(): Promise<Response> {
   console.log('[morning-report] Starting — %s', new Date().toISOString());
 
-  const now = riyadhNow();
+  const tdApiKey = process.env.TWELVE_DATA_API_KEY ?? '';
+  const now      = riyadhNow();
   const dateLabel = formatDateArabic(now);
 
-  // 1. Get crumb for authenticated YF requests
-  const auth = await getYFCrumb();
-  const crumb = auth?.crumb ?? '';
-  const cookies = auth?.cookies ?? '';
-
-  // 2. Fetch TASI index
-  const tasiData = await fetchTASI(crumb, cookies);
-
-  // 3. Fetch stock quotes + commodities in parallel
+  // 1. Fetch TASI + commodities + stock quotes in parallel
   const half = Math.ceil(TOP_SAUDI_SYMBOLS.length / 2);
-  const [batch1, batch2, commodities] = await Promise.all([
-    fetchQuotes(TOP_SAUDI_SYMBOLS.slice(0, half), crumb, cookies),
-    fetchQuotes(TOP_SAUDI_SYMBOLS.slice(half), crumb, cookies),
-    fetchCommodities(crumb, cookies),
+  const [tasiData, commodities, batch1, batch2] = await Promise.all([
+    fetchTASI(tdApiKey),
+    fetchCommodities(tdApiKey),
+    fetchQuotes(TOP_SAUDI_SYMBOLS.slice(0, half), tdApiKey),
+    fetchQuotes(TOP_SAUDI_SYMBOLS.slice(half), tdApiKey),
   ]);
+
   const allQuotes = [...batch1, ...batch2].filter(
     (q) => typeof q.regularMarketChangePercent === 'number',
   );
 
-  // 4. Sort gainers / losers
-  const sorted = [...allQuotes].sort(
-    (a, b) => b.regularMarketChangePercent - a.regularMarketChangePercent,
-  );
+  // 2. Sort gainers / losers
+  const sorted  = [...allQuotes].sort((a, b) => b.regularMarketChangePercent - a.regularMarketChangePercent);
   const gainers = sorted.filter((q) => q.regularMarketChangePercent > 0).slice(0, 5);
-  const losers = sorted
-    .filter((q) => q.regularMarketChangePercent < 0)
-    .reverse()
-    .slice(0, 5);
+  const losers  = sorted.filter((q) => q.regularMarketChangePercent < 0).reverse().slice(0, 5);
 
   const gainersCount = allQuotes.filter((q) => q.regularMarketChangePercent > 0).length;
-  const losersCount = allQuotes.filter((q) => q.regularMarketChangePercent < 0).length;
+  const losersCount  = allQuotes.filter((q) => q.regularMarketChangePercent < 0).length;
 
-  // 5. Fetch news and translate headlines to Arabic
-  const newsItems = await fetchEconomicNews();
+  // 3. Fetch news and translate headlines
+  const newsItems        = await fetchEconomicNews();
   const translatedTitles = await translateHeadlines(newsItems.slice(0, 3).map((n) => n.title));
 
-  // 6. Claude briefing
+  // 4. Claude briefing
   const forecast = await claudeBriefing({
-    tasiPrice: tasiData?.price ?? null,
+    tasiPrice:         tasiData?.price         ?? null,
     tasiChangePercent: tasiData?.changePercent ?? null,
     gainers,
     losers,
@@ -600,7 +561,7 @@ export default async function handler(): Promise<Response> {
     dateLabel,
   });
 
-  // 7. Build Telegram message
+  // 5. Build Telegram message
   const tasiLine =
     tasiData != null
       ? `${tasiData.price.toFixed(2)} نقطة  ${tasiData.changePercent >= 0 ? '▲' : '▼'} ${Math.abs(tasiData.changePercent).toFixed(2)}%`
@@ -616,21 +577,15 @@ export default async function handler(): Promise<Response> {
 
   const newsBlock = translatedTitles.map((t) => `• ${t}`).join('\n');
 
-  const brent = commodities.find((c) => c.symbol === 'BZ=F');
-  const gold = commodities.find((c) => c.symbol === 'GC=F');
+  const brent = commodities.find((c) => c.symbol === 'BZ:COMEX');
+  const gold  = commodities.find((c) => c.symbol === 'XAU/USD');
   const commoditiesBlock =
     brent || gold
       ? [
           `🛢️ *السلع العالمية:*`,
-          brent
-            ? `• برنت: $${brent.price.toFixed(2)} (${brent.changePercent >= 0 ? '+' : ''}${brent.changePercent.toFixed(2)}%)`
-            : null,
-          gold
-            ? `• ذهب: $${gold.price.toFixed(0)} (${gold.changePercent >= 0 ? '+' : ''}${gold.changePercent.toFixed(2)}%)`
-            : null,
-        ]
-          .filter(Boolean)
-          .join('\n')
+          brent ? `• برنت: $${brent.price.toFixed(2)}` : null,
+          gold  ? `• ذهب: $${gold.price.toFixed(0)}`   : null,
+        ].filter(Boolean).join('\n')
       : null;
 
   const message = [
@@ -647,12 +602,8 @@ export default async function handler(): Promise<Response> {
       ? `🔥 *أبرز الصاعدين:*\n${gainersBlock}`
       : '🔥 *أبرز الصاعدين:* غير متاح',
     ``,
-    losers.length > 0
-      ? `📉 *أبرز الهابطين:*\n${losersBlock}`
-      : '',
-    newsItems.length > 0
-      ? `\n📰 *أخبار مؤثرة:*\n${newsBlock}`
-      : '',
+    losers.length > 0  ? `📉 *أبرز الهابطين:*\n${losersBlock}` : '',
+    newsItems.length > 0 ? `\n📰 *أخبار مؤثرة:*\n${newsBlock}` : '',
     ``,
     `🎯 *توقع اليوم:*\n${forecast}`,
     ``,
@@ -662,14 +613,14 @@ export default async function handler(): Promise<Response> {
     .filter((line) => line !== null && line !== undefined)
     .join('\n');
 
-  // 8. Build email HTML and send both Telegram + Email in parallel
+  // 6. Build email HTML and send both Telegram + Email in parallel
   const emailHtml = buildEmailHtml({
     dateLabel,
     tasiLine,
     gainersCount,
     losersCount,
     commoditiesBlock: commoditiesBlock ?? null,
-    gainersBlock: gainersBlock || '• لا بيانات',
+    gainersBlock:     gainersBlock || '• لا بيانات',
     losersBlock,
     newsBlock,
     forecast,
