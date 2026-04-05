@@ -194,6 +194,53 @@ async function handleStockPrice(url) {
   return json({ success: true, result: results });
 }
 
+// ─── Twelve Data — Saudi stocks + TASI ──────────────────────────────────────
+
+const TD_INTERVAL   = { '1d':'5min', '1w':'1h',   '1mo':'1day', '6mo':'1week', '1y':'1week', '5y':'1month' };
+const TD_OUTPUTSIZE = { '1d': 80,   '1w': 42,    '1mo': 30,    '6mo': 26,     '1y': 52,     '5y': 60      };
+
+function tdSymbol(symbol) {
+  if (symbol === '^TASI') return 'TASI';
+  return symbol.toUpperCase().replace('.SR', ':TADAWUL');
+}
+
+async function fetchChartFromTwelveData(symbol, range, apiKey) {
+  if (!apiKey) return null;
+  const s          = tdSymbol(symbol);
+  const interval   = TD_INTERVAL[range]   ?? '1day';
+  const outputsize = TD_OUTPUTSIZE[range] ?? 30;
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(s)}&interval=${interval}&outputsize=${outputsize}&apikey=${apiKey}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, 8000);
+    if (!res?.ok) { console.log(`[td] HTTP ${res?.status}`); return null; }
+    const data = await res.json();
+    if (data.status !== 'ok' || !Array.isArray(data.values)) {
+      console.log(`[td] bad response: ${data.message ?? data.status}`);
+      return null;
+    }
+    const quotes = [...data.values].reverse().map(v => ({
+      date:   new Date(v.datetime.length === 10 ? v.datetime + 'T12:00:00Z' : v.datetime + 'Z').toISOString(),
+      open:   parseFloat(v.open)   || 0,
+      high:   parseFloat(v.high)   || 0,
+      low:    parseFloat(v.low)    || 0,
+      close:  parseFloat(v.close)  || 0,
+      volume: parseFloat(v.volume) || 0,
+    })).filter(q => q.close > 0);
+    if (quotes.length === 0) return null;
+    const last = quotes[quotes.length - 1];
+    console.log(`[td] OK: ${s} ${range} → ${quotes.length} candles`);
+    return {
+      success: true,
+      meta: { symbol, regularMarketPrice: last.close, currency: data.meta?.currency ?? 'SAR' },
+      quotes,
+      source: 'twelve-data',
+    };
+  } catch (e) {
+    console.log(`[td] error: ${e.message}`);
+    return null;
+  }
+}
+
 // ─── Stock Chart (Yahoo Finance + Stooq fallback) ────────────────────────────
 
 const RANGE_MAP = {
@@ -347,7 +394,7 @@ function quotesFromSpark(data, symbol) {
   return { success: true, meta: result.meta ?? { symbol }, quotes, source: 'spark' };
 }
 
-async function handleStockChart(url) {
+async function handleStockChart(url, env) {
   const symbol = url.searchParams.get('symbol') ?? '';
   const range  = url.searchParams.get('range')  ?? '1mo';
   if (!symbol) return json({ success: false, error: 'symbol required' }, 400);
@@ -355,6 +402,13 @@ async function handleStockChart(url) {
   const cacheKey = `${symbol}_${range}`;
   const hit      = chartCache.get(cacheKey);
   if (hit && Date.now() - hit.ts < TTL) return json(hit.data);
+
+  // Source 0: Twelve Data (primary — works from Cloudflare IPs)
+  const tdData = await fetchChartFromTwelveData(symbol, range, env?.TWELVE_DATA_KEY);
+  if (tdData) {
+    chartCache.set(cacheKey, { data: tdData, ts: Date.now() });
+    return json(tdData);
+  }
 
   const cfg     = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
   const period1 = cfg.period1();
@@ -1068,7 +1122,7 @@ export default {
     if (url.pathname === '/api/tasi-index')               return handleTasiIndex();
     if (url.pathname === '/api/commodities')              return handleCommodities();
     if (url.pathname.startsWith('/api/stock-price'))      return handleStockPrice(url);
-    if (url.pathname.startsWith('/api/stock-chart'))      return handleStockChart(url);
+    if (url.pathname.startsWith('/api/stock-chart'))      return handleStockChart(url, env);
 
     // POST endpoints (Cloudflare Workers AI)
     if (request.method === 'POST') {
