@@ -200,8 +200,7 @@ const TD_INTERVAL   = { '1d':'5min', '1w':'1h',   '1mo':'1day', '6mo':'1week', '
 const TD_OUTPUTSIZE = { '1d': 80,   '1w': 42,    '1mo': 30,    '6mo': 26,     '1y': 52,     '5y': 60      };
 
 function tdSymbol(symbol) {
-  if (symbol === '^TASI') return 'TASI';
-  return symbol.toUpperCase().replace('.SR', ':TADAWUL');
+  return symbol.replace(/^\^/, '').replace(/\.SR$/i, '') + ':XSAU';
 }
 
 async function fetchChartFromTwelveData(symbol, range, apiKey) {
