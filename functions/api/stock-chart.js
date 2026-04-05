@@ -1,64 +1,33 @@
 /**
  * /api/stock-chart — Cloudflare Pages Function
- * Source: Stooq historical CSV (free, no API key)
- * Saudi symbol mapping: "2222.SR" → "2222.sa"
+ * Source: Twelve Data (requires TWELVE_DATA_API_KEY env var)
+ * Saudi symbol mapping: "2222.SR" → "2222:XSAU", "^TASI" / "%5ETASI" → "TASI:XSAU"
  *
  * Query params:
- *   symbol — e.g. "2222.SR"
+ *   symbol — e.g. "2222.SR" or "^TASI" or "%5ETASI"
  *   range  — "1d"|"1w"|"1mo"|"6mo"|"1y"|"5y"  (default: "1mo")
- *
- * Stooq CSV URL:
- *   https://stooq.com/q/d/l/?s=2222.sa&d1=YYYYMMDD&d2=YYYYMMDD&i=d
- *   Returns: Date,Open,High,Low,Close,Volume  (newest-first)
  */
 
-const RANGE_DAYS = {
-  '1d':  5,
-  '1w':  7,
-  '1mo': 30,
-  '6mo': 180,
-  '1y':  365,
-  '5y':  1825,
-};
+const BASE = 'https://api.twelvedata.com';
+const TTL  = 5 * 60 * 1000;
 
-const TTL        = 5 * 60 * 1000;
 const chartCache = new Map();
 
-function toStooq(symbol) {
-  return symbol.replace(/\.SR$/i, '.sa');
-}
+const RANGE_MAP = {
+  '1d':  { interval: '5min',   outputsize: 78  },
+  '1w':  { interval: '1h',     outputsize: 168 },
+  '1mo': { interval: '1day',   outputsize: 30  },
+  '6mo': { interval: '1day',   outputsize: 180 },
+  '1y':  { interval: '1week',  outputsize: 52  },
+  '5y':  { interval: '1month', outputsize: 60  },
+};
 
-function toStooqDate(d) {
-  const y   = d.getFullYear();
-  const m   = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
-}
-
-function parseCsv(csv) {
-  const lines = csv.trim().split('\n');
-  if (lines.length < 2) return [];
-
-  const bars = [];
-  for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(',');
-    if (parts.length < 5) continue;
-    const [dateStr, openStr, highStr, lowStr, closeStr, volStr] = parts;
-    const close = parseFloat(closeStr);
-    if (!close || close === 0) continue;
-
-    bars.push({
-      date:   new Date(dateStr.trim()).toISOString(),
-      open:   parseFloat(openStr),
-      high:   parseFloat(highStr),
-      low:    parseFloat(lowStr),
-      close,
-      volume: parseInt(volStr ?? '0', 10),
-    });
-  }
-
-  // Stooq returns newest-first — reverse to chronological
-  return bars.reverse();
+/** "2222.SR" → "2222:XSAU", "^TASI" / "%5ETASI" → "TASI:XSAU" */
+function toTwelveData(raw) {
+  const decoded = decodeURIComponent(raw);
+  return decoded
+    .replace(/^\^/, '')
+    .replace(/\.SR$/i, '') + ':XSAU';
 }
 
 function respond(data, status = 200) {
@@ -84,27 +53,36 @@ export async function onRequest(context) {
   const hit      = chartCache.get(cacheKey);
   if (hit && Date.now() - hit.ts < TTL) return respond(hit.data);
 
-  const days     = RANGE_DAYS[range] ?? RANGE_DAYS['1mo'];
-  const today    = new Date();
-  const fromDate = new Date(today.getTime() - days * 24 * 60 * 60 * 1000);
-  const d1       = toStooqDate(fromDate);
-  const d2       = toStooqDate(today);
-  const stooqSym = toStooq(symbol);
+  const apiKey = context.env?.TWELVE_DATA_API_KEY ?? '';
+  const cfg    = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
+  const tdSym  = toTwelveData(symbol);
 
   try {
-    const csvUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSym)}&d1=${d1}&d2=${d2}&i=d`;
-    const res = await fetch(csvUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' },
-    });
-    if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
+    const tdUrl = `${BASE}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${cfg.interval}&outputsize=${cfg.outputsize}&apikey=${apiKey}`;
+    const res   = await fetch(tdUrl);
+    if (!res.ok) throw new Error(`Twelve Data HTTP ${res.status}`);
 
-    const csv    = await res.text();
-    const quotes = parseCsv(csv);
+    const data = await res.json();
+    if (data.status === 'error') throw new Error(data.message ?? 'Twelve Data error');
+
+    const values = data.values ?? [];
+    const quotes = values
+      .reverse()
+      .map(v => ({
+        date:   new Date(v.datetime).toISOString(),
+        open:   parseFloat(v.open   ?? '0'),
+        high:   parseFloat(v.high   ?? '0'),
+        low:    parseFloat(v.low    ?? '0'),
+        close:  parseFloat(v.close  ?? '0'),
+        volume: parseInt(v.volume   ?? '0', 10),
+      }))
+      .filter(q => q.close > 0);
+
     if (quotes.length === 0) throw new Error(`No chart data for ${symbol}`);
 
     const result = {
       success: true,
-      meta:    { symbol, stooqSymbol: stooqSym, range },
+      meta:    { symbol, tdSymbol: tdSym, range, ...(data.meta ?? {}) },
       quotes,
     };
 
