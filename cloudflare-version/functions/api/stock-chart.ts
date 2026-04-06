@@ -49,9 +49,9 @@ const RANGE_DAYS: Record<ChartRange, number> = {
 const TTL        = 5 * 60 * 1000;
 const chartCache = new Map<string, { data: ChartResult; ts: number }>();
 
-/** "2222.SR" → "2222.sa" */
+/** "2222.SR" or "^TASI" → "2222.sa" or "tasi" */
 function toStooq(symbol: string): string {
-  return symbol.replace(/\.SR$/i, '.sa');
+  return decodeURIComponent(symbol).replace(/^\^/, '').replace(/\.SR$/i, '.sa');
 }
 
 /** Date → "YYYYMMDD" string for Stooq */

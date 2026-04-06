@@ -25,7 +25,7 @@ const TTL        = 5 * 60 * 1000;
 const chartCache = new Map();
 
 function toStooq(symbol) {
-  return symbol.replace(/\.SR$/i, '.sa');
+  return decodeURIComponent(symbol).replace(/^\^/, '').replace(/\.SR$/i, '.sa');
 }
 
 function toStooqDate(d) {
