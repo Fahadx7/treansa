@@ -3537,15 +3537,7 @@ function App() {
               >
                 <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
               </button>
-              <button
-                onClick={toggleTheme}
-                className="btn-icon"
-                style={{ width: 34, height: 34, borderRadius: 8 }}
-              >
-                {isDarkMode
-                  ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />
-                  : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />}
-              </button>
+              <ThemeToggle />
             </div>
           </div>
 
