@@ -1,50 +1,62 @@
 /* ═══════════════════════════════════════════
-   Dark Theme — TrandSA
-   Deep Space · Professional Trading UI
+   Dark Theme — Deep Space Neon
 ═══════════════════════════════════════════ */
 [data-theme="dark"], .dark {
-  --bg:            #060b14;
-  --bg-card:       #0d1421;
-  --bg-surface:    #111927;
-  --bg-hover:      rgba(255,255,255,0.06);
-  --bg-active:     rgba(0,212,170,0.12);
-  --bg-overlay:    rgba(6,11,20,0.90);
+  --bg:            hsl(230 35% 7%);
+  --bg-card:       hsl(230 30% 10%);
+  --bg-surface:    hsl(230 28% 14%);
+  --bg-glass:      rgba(10,12,32,0.72);
+  --bg-hover:      rgba(139,92,246,0.08);
+  --bg-active:     rgba(139,92,246,0.16);
+  --bg-overlay:    rgba(7,9,26,0.90);
 
-  --border:        #1e2d40;
-  --border-subtle: rgba(255,255,255,0.06);
-  --border-strong: rgba(255,255,255,0.15);
-  --border-accent: #00c896;
+  --border:        rgba(255,255,255,0.07);
+  --border-subtle: rgba(255,255,255,0.04);
+  --border-strong: rgba(255,255,255,0.16);
+  --border-accent: hsl(265 100% 60%);
 
-  --text:          #e8f0fe;
-  --text-muted:    #637898;
-  --text-faint:    #3a4d63;
-  --text-inverse:  #060b14;
+  --text:          hsl(230 50% 96%);
+  --text-muted:    hsl(230 20% 60%);
+  --text-faint:    hsl(230 20% 35%);
+  --text-inverse:  hsl(230 35% 7%);
 
-  --accent:        #00c896;
-  --accent-hover:  #00e8ae;
-  --accent-dim:    rgba(0,200,150,0.15);
-  --accent-blue:   #4d9fec;
-  --accent-purple: #9b6dff;
+  --accent:           hsl(265 100% 60%);
+  --accent-2:         hsl(320 100% 60%);
+  --accent-hover:     hsl(265 100% 70%);
+  --accent-dim:       hsla(265,100%,60%,0.15);
+  --gradient-brand:   linear-gradient(135deg, hsl(265 100% 60%), hsl(320 100% 60%));
 
-  --positive:      #00c896;
-  --positive-dim:  rgba(0,200,150,0.15);
-  --negative:      #ff3d5a;
-  --negative-dim:  rgba(255,61,90,0.15);
-  --neutral:       #637898;
-  --warning:       #f0b429;
-  --warning-dim:   rgba(240,180,41,0.15);
-  --info:          #4d9fec;
-  --info-dim:      rgba(77,159,236,0.15);
+  --positive:      hsl(155 90% 45%);
+  --positive-dim:  hsla(155,90%,45%,0.12);
+  --negative:      hsl(340 85% 55%);
+  --negative-dim:  hsla(340,85%,55%,0.12);
+  --neutral:       hsl(230 20% 60%);
+  --warning:       hsl(38 95% 55%);
+  --warning-dim:   hsla(38,95%,55%,0.12);
+  --info:          hsl(175 100% 45%);
+  --info-dim:      hsla(175,100%,45%,0.12);
+
+  --neon-green:    hsl(155 90% 45%);
+  --neon-cyan:     hsl(175 100% 45%);
+  --neon-blue:     hsl(220 100% 60%);
+  --neon-purple:   hsl(265 100% 60%);
+  --neon-pink:     hsl(320 100% 60%);
+  --neon-rose:     hsl(340 85% 55%);
 
   --surface:       var(--bg-card);
   --green:         var(--positive);
   --red:           var(--negative);
   --gold:          var(--warning);
+  --accent-blue:   var(--neon-cyan);
+  --accent-purple: var(--accent);
 
-  --shadow-card:   0 1px 4px rgba(0,0,0,0.7), 0 4px 20px rgba(0,0,0,0.5);
-  --shadow-hover:  0 6px 32px rgba(0,0,0,0.7);
-  --shadow-modal:  0 28px 80px rgba(0,0,0,0.85);
-  --shadow-glow:   0 0 20px rgba(0,200,150,0.25);
+  --shadow-card:   0 1px 1px rgba(0,0,0,0.6), 0 4px 24px rgba(0,0,0,0.4);
+  --shadow-hover:  0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px hsla(265,100%,60%,0.2);
+  --shadow-modal:  0 32px 80px rgba(0,0,0,0.9);
+  --glow-accent:   0 0 24px hsla(265,100%,60%,0.4);
+  --glow-positive: 0 0 20px hsla(155,90%,45%,0.4);
+  --glow-negative: 0 0 20px hsla(340,85%,55%,0.4);
+  --shadow-glow:   var(--glow-accent);
 
   color-scheme: dark;
 }
