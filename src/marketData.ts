@@ -113,6 +113,29 @@ export async function fetchChart(
   const cached = loadChartCache(cacheKey);
   if (cached) return cached;
 
+  const workerBase = (import.meta as any).env?.VITE_API_WORKER_URL ?? '';
+
+  // Strategy 1: trandsa-api Worker
+  if (workerBase) {
+    try {
+      const clean = symbol === '^TASI' ? '^TASI.SR' : /^\d+$/.test(symbol) ? symbol + '.SR' : symbol;
+      const res = await fetch(
+        `${workerBase}/api/chart?symbol=${encodeURIComponent(clean)}&range=${range}`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+          const quotes = (data.data as any[]).map(q => ({ ...q, date: new Date(q.date) }));
+          const meta = { symbol: data.symbol, currency: data.currency, regularMarketPrice: data.regularMarketPrice };
+          saveChartCache(cacheKey, meta, quotes);
+          return { meta, quotes };
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Strategy 2: local /api/stock-chart
   const res = await fetch(`/api/stock-chart?symbol=${encodeURIComponent(symbol)}&range=${range}`);
   if (!res.ok) throw new Error(`Chart API: HTTP ${res.status}`);
   const data = await res.json();

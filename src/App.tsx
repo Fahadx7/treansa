@@ -1021,6 +1021,23 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
     setLoadingNews(true);
     setNewsError(null);
     try {
+      const workerBase = (import.meta as any).env?.VITE_API_WORKER_URL ?? '';
+      // Strategy 1: trandsa-api Worker
+      if (workerBase) {
+        const ticker = stock.symbol.replace('.SR', '');
+        const res = await fetch(
+          `${workerBase}/api/news?symbol=${encodeURIComponent(ticker)}`,
+          { signal: AbortSignal.timeout(8000) },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.news) && data.news.length > 0) {
+            setNews(data.news);
+            return;
+          }
+        }
+      }
+      // Strategy 2: local /api/ai-news
       const res = await fetch('/api/ai-news', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
