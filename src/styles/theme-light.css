@@ -1,0 +1,37 @@
+/* ─── Light Theme — TrandSA ─── */
+[data-theme="light"] {
+  --bg:          #f0f4f8;
+  --bg-card:     #ffffff;
+  --surface:     #ffffff;
+  --border:      #d1dce8;
+  --text:        #1a202c;
+  --text-muted:  #4a5568;
+  --green:       #00a878;
+  --accent:      #00a878;
+  --red:         #e53e3e;
+  --gold:        #c9920a;
+  --positive:    #00a878;
+  --negative:    #e53e3e;
+  --neutral:     #718096;
+  --accent-blue: #2b6cb0;
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-hover: 0 6px 24px rgba(0,0,0,0.12);
+  --shadow-modal: 0 28px 80px rgba(0,0,0,0.2);
+
+  color-scheme: light;
+}
+
+[data-theme="light"] body,
+[data-theme="light"] #root {
+  background-color: var(--bg);
+}
+
+/* Light mode card borders more visible */
+[data-theme="light"] .stat-card,
+[data-theme="light"] [class*="border-app-border"] {
+  border-color: var(--border);
+}
+
+/* Light mode text adjustments */
+[data-theme="light"] .text-app-text-muted { color: var(--text-muted) !important; }
+[data-theme="light"] .text-app-text       { color: var(--text) !important; }

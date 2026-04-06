@@ -1,0 +1,27 @@
+/* ─── Dark Theme — TrandSA ─── */
+[data-theme="dark"], .dark {
+  --bg:          #060b14;
+  --bg-card:     #0d1421;
+  --surface:     #0d1421;
+  --border:      #1e2d40;
+  --text:        #e8f0fe;
+  --text-muted:  #637898;
+  --green:       #00c896;
+  --accent:      #00c896;
+  --red:         #ff3d5a;
+  --gold:        #f0b429;
+  --positive:    #00c896;
+  --negative:    #ff3d5a;
+  --neutral:     #637898;
+  --accent-blue: #4d9fec;
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.7), 0 4px 20px rgba(0,0,0,0.5);
+  --shadow-hover: 0 6px 32px rgba(0,0,0,0.7);
+  --shadow-modal: 0 28px 80px rgba(0,0,0,0.85);
+
+  color-scheme: dark;
+}
+
+[data-theme="dark"] body,
+[data-theme="dark"] #root {
+  background-color: var(--bg);
+}

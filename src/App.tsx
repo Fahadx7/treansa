@@ -32,12 +32,11 @@ import {
   MessageSquare,
   Star,
   User,
-  Sun,
-  Moon,
   Newspaper,
   Search,
   List as ListIcon
 } from 'lucide-react';
+import { ThemeToggle } from './components/ThemeToggle';
 import AIAdvisor from './pages/AIAdvisor';
 import IntelligenceEngine from './pages/IntelligenceEngine';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
@@ -2633,27 +2632,6 @@ function App() {
   const [indexQuotes, setIndexQuotes] = useState<Record<string, { price: number; change: number; changePercent: number }>>({});
   const [commodities, setCommodities] = useState<CommodityItem[]>([]);
   const [commoditiesLoading, setCommoditiesLoading] = useState(true);
-  const [themeSpin, setThemeSpin] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    return saved ? saved === 'dark' : true; // Default to dark
-  });
-
-  useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDarkMode]);
-
-  const toggleTheme = () => {
-    setIsDarkMode(v => !v);
-    setThemeSpin(true);
-    setTimeout(() => setThemeSpin(false), 400);
-  };
   const [activeTab, setActiveTab] = useState<'active' | 'watchlist' | 'all' | 'margin'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [watchlist, setWatchlist] = useState<string[]>([]);
@@ -3470,16 +3448,7 @@ function App() {
               <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
             </button>
 
-            <button
-              onClick={toggleTheme}
-              title={isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
-              className="btn-icon"
-              style={{ width: 34, height: 34, borderRadius: 8 }}
-            >
-              {isDarkMode
-                ? <Sun className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />
-                : <Moon className={`w-4 h-4 ${themeSpin ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />}
-            </button>
+            <ThemeToggle />
           </div>
 
           {/* ── Action buttons ── */}
