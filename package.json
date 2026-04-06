@@ -10,10 +10,8 @@
     "start": "NODE_ENV=production tsx server.ts",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:ui": "vitest --ui"
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@google/genai": "^1.46.0",
@@ -42,21 +40,21 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
+    "@testing-library/jest-dom": "^6.0",
+    "@testing-library/react": "^16.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/supertest": "^7.2.0",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/coverage-v8": "^2.0",
     "autoprefixer": "^10.4.21",
     "happy-dom": "^20.8.9",
-    "msw": "^2.12.14",
-    "supertest": "^7.2.2",
+    "msw": "^2.0",
+    "supertest": "^7.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vitest": "^4.1.2"
+    "vitest": "^2.0"
   },
   "overrides": {
     "react-window": {
