@@ -477,7 +477,7 @@ const MiniTable = ({ title, icon: Icon, data, type, onStockClick, accent = 'emer
             >
               {/* Company — full name, no truncation */}
               <div className="min-w-0 space-y-0.5">
-                <div className="font-semibold leading-snug group-hover:text-[#00d4aa] transition-colors break-words"
+                <div className="font-semibold leading-snug group-hover:text-[hsl(265,100%,60%)] transition-colors break-words"
                      style={{ fontSize: 13, color: 'var(--text)' }}>
                   {item.companyName || '---'}
                 </div>
@@ -843,8 +843,8 @@ const MarketIndexModal = ({
                             border: 'none',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
-                            background: chartPeriod === p.id ? '#00d4aa' : 'transparent',
-                            color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)',
+                            background: chartPeriod === p.id ? 'var(--accent)' : 'transparent',
+                            color: chartPeriod === p.id ? 'var(--bg-card)' : 'var(--text-muted)',
                             fontFamily: 'inherit',
                           }}
                         >
@@ -1326,8 +1326,8 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                               border: 'none',
                               cursor: 'pointer',
                               transition: 'all 0.15s ease',
-                              background: chartPeriod === p.id ? '#00d4aa' : 'transparent',
-                              color: chartPeriod === p.id ? '#0d1e3a' : 'var(--text-muted)',
+                              background: chartPeriod === p.id ? 'var(--accent)' : 'transparent',
+                              color: chartPeriod === p.id ? 'var(--bg-card)' : 'var(--text-muted)',
                               fontFamily: 'inherit',
                             }}
                           >
@@ -2162,7 +2162,7 @@ const MarginTrading = ({
           {isLoggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
           {isLoggingIn ? 'جارٍ الدخول...' : 'تسجيل الدخول'}
         </button>
-        {loginError && <p className="text-sm" style={{ color: '#ff3d5a' }}>{loginError}</p>}
+        {loginError && <p className="text-sm" style={{ color: 'var(--negative)' }}>{loginError}</p>}
       </div>
     );
   }
@@ -2506,7 +2506,7 @@ function IndexTickerBar({ indices }: { indices: TickerIndex[] }) {
   return (
     <div
       className="sticky z-[90] safe-top overflow-hidden"
-      style={{ top: 0, background: '#0d1e3a', borderBottom: '1px solid rgba(255,255,255,0.06)', height: 40 }}
+      style={{ top: 0, background: 'var(--bg-card)', borderBottom: '1px solid var(--border)', height: 40 }}
     >
       {/* Desktop: static row */}
       <div className="hidden md:flex items-center h-full max-w-7xl mx-auto px-4">
@@ -2547,7 +2547,7 @@ interface CommodityItem {
 function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: boolean }) {
   if (loading && items.length === 0) {
     return (
-      <div style={{ background: '#0d1e3a', borderBottom: '1px solid rgba(255,255,255,0.05)', height: 52 }}
+      <div style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border-subtle)', height: 52 }}
         className="flex items-center px-4 gap-3">
         {[1, 2, 3].map(i => (
           <div key={i} className="animate-pulse h-8 w-28 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }} />
@@ -2556,12 +2556,12 @@ function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: b
     );
   }
   return (
-    <div style={{ background: '#0d1e3a', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+    <div style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border-subtle)' }}>
       <div className="overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         <div className="flex items-center px-3 h-[52px] min-w-max md:min-w-0" style={{ gap: 0 }}>
           {items.map((item, idx) => {
             const up = item.changePercent >= 0;
-            const accent = up ? '#00c896' : '#ff3d5a';
+            const accent = up ? 'var(--positive)' : 'var(--negative)';
             const cardBg = up ? 'rgba(0,200,150,0.07)' : 'rgba(255,61,90,0.07)';
             const cardBorder = up ? 'rgba(0,200,150,0.18)' : 'rgba(255,61,90,0.16)';
             const cardGlow = up ? '0 0 14px rgba(0,200,150,0.1)' : '0 0 14px rgba(255,61,90,0.08)';
@@ -3400,7 +3400,7 @@ function App() {
         className="sticky z-[80] safe-top"
         style={{
           top: 40,
-          background: '#0d1e3a',
+          background: 'var(--bg-card)',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           height: 60,
         }}
@@ -3413,7 +3413,7 @@ function App() {
               className="logo-pulse flex items-center justify-center shrink-0"
               style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(0,212,170,0.12)', border: '1px solid rgba(0,212,170,0.25)' }}
             >
-              <BarChart3 className="w-4 h-4" style={{ color: '#00d4aa' }} />
+              <BarChart3 className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             </div>
             <div>
               <div className="font-extrabold text-white leading-tight" style={{ fontSize: 17, letterSpacing: '-0.02em', fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>
@@ -3445,7 +3445,7 @@ function App() {
               className="btn-icon disabled:opacity-40"
               style={{ width: 34, height: 34, borderRadius: 8 }}
             >
-              <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
+              <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? 'var(--accent)' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
             </button>
 
             <ThemeToggle />
@@ -3468,7 +3468,7 @@ function App() {
                   {activeCount > 0 && (
                     <span
                       className="absolute flex items-center justify-center text-white font-bold"
-                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 14, height: 14, fontSize: 8, padding: '0 3px', top: -3, right: -3, border: '1.5px solid #0d1e3a' }}
+                      style={{ background: '#ef4444', borderRadius: 999, minWidth: 14, height: 14, fontSize: 8, padding: '0 3px', top: -3, right: -3, border: '1.5px solid var(--bg-card)' }}
                     >
                       {activeCount > 9 ? '9+' : activeCount}
                     </span>
@@ -3506,7 +3506,7 @@ function App() {
                 style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(0,212,170,0.1)', border: '1px solid rgba(0,212,170,0.25)' }}
                 title={`${user.displayName || ''} — تسجيل الخروج`}
               >
-                <User className="w-4 h-4" style={{ color: '#00d4aa' }} />
+                <User className="w-4 h-4" style={{ color: 'var(--accent)' }} />
               </button>
             ) : (
               <div className="flex flex-col items-end gap-1">
@@ -3522,7 +3522,7 @@ function App() {
                   <span className="hidden sm:inline">{isLoggingIn ? 'جارٍ الدخول...' : 'دخول'}</span>
                 </button>
                 {loginError && (
-                  <span style={{ fontSize: 10, color: '#ff3d5a', maxWidth: 160, textAlign: 'right', lineHeight: 1.3 }}>{loginError}</span>
+                  <span style={{ fontSize: 10, color: 'var(--negative)', maxWidth: 160, textAlign: 'right', lineHeight: 1.3 }}>{loginError}</span>
                 )}
               </div>
             )}
@@ -3535,7 +3535,7 @@ function App() {
                 className="btn-icon disabled:opacity-40"
                 style={{ width: 34, height: 34, borderRadius: 8 }}
               >
-                <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? '#00d4aa' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
+                <RefreshCw className="w-4 h-4" style={{ color: isLoadingData ? 'var(--accent)' : 'rgba(255,255,255,0.5)', animation: isLoadingData ? 'spin 1s linear infinite' : undefined }} />
               </button>
               <ThemeToggle />
             </div>
@@ -3547,30 +3547,30 @@ function App() {
       {/* ── Page Navigation Bar ─────────────────────────────────────────── */}
       <nav
         className="sticky top-[100px] z-[70]"
-        style={{ background: 'rgba(6,11,20,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(99,179,237,0.1)' }}
+        style={{ background: 'var(--bg-overlay)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}
       >
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center gap-1" style={{ height: 44 }}>
             <button
               onClick={() => setCurrentPage('home')}
               className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-all relative"
-              style={{ color: currentPage === 'home' ? '#00d4aa' : 'rgba(255,255,255,0.45)' }}
+              style={{ color: currentPage === 'home' ? 'var(--accent)' : 'rgba(255,255,255,0.45)' }}
             >
               <BarChart3 className="w-4 h-4" />
               <span>لوحة التداول</span>
               {currentPage === 'home' && (
-                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#00d4aa' }} />
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
               )}
             </button>
             <button
               onClick={() => setCurrentPage('ai-advisor')}
               className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-all relative"
-              style={{ color: currentPage === 'ai-advisor' ? '#00d4aa' : 'rgba(255,255,255,0.45)' }}
+              style={{ color: currentPage === 'ai-advisor' ? 'var(--accent)' : 'rgba(255,255,255,0.45)' }}
             >
               <Brain className="w-4 h-4" />
               <span>المستشار الذكي</span>
               {currentPage === 'ai-advisor' && (
-                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#00d4aa' }} />
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
               )}
             </button>
             <button
@@ -3581,7 +3581,7 @@ function App() {
               <Zap className="w-4 h-4" />
               <span>محرك الاستخبارات</span>
               {currentPage === 'intelligence' && (
-                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#a78bfa' }} />
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
               )}
             </button>
           </div>
@@ -3645,9 +3645,9 @@ function App() {
                 className="text-right cursor-pointer transition-transform hover:-translate-y-0.5"
                 style={{
                   width: 280, flexShrink: 0,
-                  background: '#112240',
+                  background: 'var(--bg-surface)',
                   border: '1px solid rgba(0,212,170,0.2)',
-                  borderRight: '3px solid #00d4aa',
+                  borderRight: '3px solid var(--accent)',
                   borderRadius: 10,
                   padding: '12px 16px',
                 }}
@@ -3674,7 +3674,7 @@ function App() {
                   </div>
                   {hasPrice && (
                     <div className="flex flex-col items-end gap-1">
-                      <span style={{ fontSize: 16, fontWeight: 800, color: isUp ? '#00c896' : '#ff3d5a', fontFamily: "'JetBrains Mono', monospace" }}>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: isUp ? 'var(--positive)' : 'var(--negative)', fontFamily: "'JetBrains Mono', monospace" }}>
                         {isUp ? '▲' : '▼'} {Math.abs(chgPct).toFixed(2)}%
                       </span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', fontFamily: "'JetBrains Mono', monospace" }}>
@@ -3686,9 +3686,9 @@ function App() {
                 {/* Line 3 */}
                 {tickers.length > 0 && (
                   <div className="flex items-center gap-2" style={{ fontSize: 12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                    <span>🟢 <span style={{ color: '#00c896', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{gainers}</span></span>
+                    <span>🟢 <span style={{ color: 'var(--positive)', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{gainers}</span></span>
                     <span style={{ color: 'rgba(255,255,255,0.15)' }}>|</span>
-                    <span>🔴 <span style={{ color: '#ff3d5a', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{losers}</span></span>
+                    <span>🔴 <span style={{ color: 'var(--negative)', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{losers}</span></span>
                     <span style={{ color: 'rgba(255,255,255,0.15)' }}>|</span>
                     <span>⚪ <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{unchanged}</span></span>
                   </div>
@@ -3700,7 +3700,7 @@ function App() {
           {/* Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 flex-1">
             {[
-              { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount    ?? 0, iconColor: 'text-[#00d4aa]',  delay: 0   },
+              { icon: TrendingUp, accent: 'accent-positive', label: 'الصفقات النشطة',  value: status?.activeTradesCount    ?? 0, iconColor: 'text-[hsl(265,100%,60%)]',  delay: 0   },
               { icon: Zap,        accent: 'accent-amber',    label: 'الموجات المكتشفة', value: status?.waveStocks?.length   ?? 0, iconColor: 'text-amber-500',   delay: 0.07 },
               { icon: Bell,       accent: 'accent-blue',     label: 'إجمالي التنبيهات', value: status?.alerts?.length       ?? 0, iconColor: 'text-blue-400',    delay: 0.14 },
               { icon: Bell,       accent: 'accent-amber',    label: 'تنبيهات مخصصة',    value: status?.customAlerts?.length ?? 0, iconColor: 'text-amber-400',   delay: 0.21 },
