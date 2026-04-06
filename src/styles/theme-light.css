@@ -1,22 +1,52 @@
-/* ─── Light Theme — TrandSA ─── */
+/* ═══════════════════════════════════════════
+   Light Theme — TrandSA
+   Clean White · Professional Trading UI
+═══════════════════════════════════════════ */
 [data-theme="light"] {
-  --bg:          #f0f4f8;
-  --bg-card:     #ffffff;
-  --surface:     #ffffff;
-  --border:      #d1dce8;
-  --text:        #1a202c;
-  --text-muted:  #4a5568;
-  --green:       #00a878;
-  --accent:      #00a878;
-  --red:         #e53e3e;
-  --gold:        #c9920a;
-  --positive:    #00a878;
-  --negative:    #e53e3e;
-  --neutral:     #718096;
-  --accent-blue: #2b6cb0;
-  --shadow-card: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
-  --shadow-hover: 0 6px 24px rgba(0,0,0,0.12);
-  --shadow-modal: 0 28px 80px rgba(0,0,0,0.2);
+  --bg:            #f4f7fb;
+  --bg-card:       #ffffff;
+  --bg-surface:    #eef2f8;
+  --bg-hover:      rgba(0,0,0,0.04);
+  --bg-active:     rgba(0,168,120,0.10);
+  --bg-overlay:    rgba(244,247,251,0.92);
+
+  --border:        #d8e2ef;
+  --border-subtle: rgba(0,0,0,0.06);
+  --border-strong: rgba(0,0,0,0.18);
+  --border-accent: #00a878;
+
+  --text:          #0f1923;
+  --text-muted:    #5a6e85;
+  --text-faint:    #9baaba;
+  --text-inverse:  #ffffff;
+
+  --accent:        #00a878;
+  --accent-hover:  #00c896;
+  --accent-dim:    rgba(0,168,120,0.12);
+  --accent-blue:   #1a6fb5;
+  --accent-purple: #6c3fcb;
+
+  --positive:      #00a878;
+  --positive-dim:  rgba(0,168,120,0.12);
+  --negative:      #d92f47;
+  --negative-dim:  rgba(217,47,71,0.12);
+  --neutral:       #5a6e85;
+  --warning:       #c97d0a;
+  --warning-dim:   rgba(201,125,10,0.12);
+  --info:          #1a6fb5;
+  --info-dim:      rgba(26,111,181,0.12);
+
+  --surface:       var(--bg-card);
+  --green:         var(--positive);
+  --red:           var(--negative);
+  --gold:          var(--warning);
+
+  --shadow-xs:     0 1px 2px rgba(0,0,0,0.06);
+  --shadow-sm:     0 1px 4px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.05);
+  --shadow-card:   0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-hover:  0 6px 24px rgba(0,0,0,0.12);
+  --shadow-modal:  0 28px 80px rgba(0,0,0,0.20);
+  --shadow-glow:   0 0 20px rgba(0,168,120,0.20);
 
   color-scheme: light;
 }
@@ -24,14 +54,25 @@
 [data-theme="light"] body,
 [data-theme="light"] #root {
   background-color: var(--bg);
+  color: var(--text);
 }
 
-/* Light mode card borders more visible */
-[data-theme="light"] .stat-card,
-[data-theme="light"] [class*="border-app-border"] {
-  border-color: var(--border);
+/* Light mode component overrides */
+[data-theme="light"] .card {
+  box-shadow: var(--shadow-card);
 }
-
-/* Light mode text adjustments */
-[data-theme="light"] .text-app-text-muted { color: var(--text-muted) !important; }
-[data-theme="light"] .text-app-text       { color: var(--text) !important; }
+[data-theme="light"] .card::after {
+  background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, transparent 60%);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+[data-theme="light"] .skeleton {
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--border-subtle) 50%, var(--bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

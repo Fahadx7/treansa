@@ -1,22 +1,50 @@
-/* ─── Dark Theme — TrandSA ─── */
+/* ═══════════════════════════════════════════
+   Dark Theme — TrandSA
+   Deep Space · Professional Trading UI
+═══════════════════════════════════════════ */
 [data-theme="dark"], .dark {
-  --bg:          #060b14;
-  --bg-card:     #0d1421;
-  --surface:     #0d1421;
-  --border:      #1e2d40;
-  --text:        #e8f0fe;
-  --text-muted:  #637898;
-  --green:       #00c896;
-  --accent:      #00c896;
-  --red:         #ff3d5a;
-  --gold:        #f0b429;
-  --positive:    #00c896;
-  --negative:    #ff3d5a;
-  --neutral:     #637898;
-  --accent-blue: #4d9fec;
-  --shadow-card: 0 1px 4px rgba(0,0,0,0.7), 0 4px 20px rgba(0,0,0,0.5);
-  --shadow-hover: 0 6px 32px rgba(0,0,0,0.7);
-  --shadow-modal: 0 28px 80px rgba(0,0,0,0.85);
+  --bg:            #060b14;
+  --bg-card:       #0d1421;
+  --bg-surface:    #111927;
+  --bg-hover:      rgba(255,255,255,0.06);
+  --bg-active:     rgba(0,212,170,0.12);
+  --bg-overlay:    rgba(6,11,20,0.90);
+
+  --border:        #1e2d40;
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.15);
+  --border-accent: #00c896;
+
+  --text:          #e8f0fe;
+  --text-muted:    #637898;
+  --text-faint:    #3a4d63;
+  --text-inverse:  #060b14;
+
+  --accent:        #00c896;
+  --accent-hover:  #00e8ae;
+  --accent-dim:    rgba(0,200,150,0.15);
+  --accent-blue:   #4d9fec;
+  --accent-purple: #9b6dff;
+
+  --positive:      #00c896;
+  --positive-dim:  rgba(0,200,150,0.15);
+  --negative:      #ff3d5a;
+  --negative-dim:  rgba(255,61,90,0.15);
+  --neutral:       #637898;
+  --warning:       #f0b429;
+  --warning-dim:   rgba(240,180,41,0.15);
+  --info:          #4d9fec;
+  --info-dim:      rgba(77,159,236,0.15);
+
+  --surface:       var(--bg-card);
+  --green:         var(--positive);
+  --red:           var(--negative);
+  --gold:          var(--warning);
+
+  --shadow-card:   0 1px 4px rgba(0,0,0,0.7), 0 4px 20px rgba(0,0,0,0.5);
+  --shadow-hover:  0 6px 32px rgba(0,0,0,0.7);
+  --shadow-modal:  0 28px 80px rgba(0,0,0,0.85);
+  --shadow-glow:   0 0 20px rgba(0,200,150,0.25);
 
   color-scheme: dark;
 }
@@ -24,4 +52,5 @@
 [data-theme="dark"] body,
 [data-theme="dark"] #root {
   background-color: var(--bg);
+  color: var(--text);
 }

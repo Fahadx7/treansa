@@ -1,39 +1,67 @@
-import { useState, useEffect } from 'react';
-import { Sun, Moon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+type Theme = 'dark' | 'light';
 
 export function ThemeToggle() {
-  const [isDark, setIsDark] = useState(() => {
+  const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('theme');
-    return saved ? saved === 'dark' : true;
+    if (saved === 'light' || saved === 'dark') return saved;
+    return 'dark';
   });
   const [spinning, setSpinning] = useState(false);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-    if (isDark) {
-      document.documentElement.classList.add('dark');
+    const root = document.documentElement;
+    root.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+      root.classList.add('dark');
     } else {
-      document.documentElement.classList.remove('dark');
+      root.classList.remove('dark');
     }
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   const toggle = () => {
-    setIsDark(v => !v);
     setSpinning(true);
+    setTheme(t => t === 'dark' ? 'light' : 'dark');
     setTimeout(() => setSpinning(false), 400);
   };
 
   return (
     <button
       onClick={toggle}
-      title={isDark ? 'الوضع الفاتح' : 'الوضع الداكن'}
-      className="btn-icon"
-      style={{ width: 34, height: 34, borderRadius: 8 }}
+      title={theme === 'dark' ? 'التحويل للثيم الفاتح' : 'التحويل للثيم الداكن'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '34px',
+        height: '34px',
+        borderRadius: '8px',
+        border: '1px solid var(--border)',
+        background: 'transparent',
+        color: 'var(--text-muted)',
+        cursor: 'pointer',
+        fontSize: '16px',
+        transition: 'all 0.15s',
+        flexShrink: 0,
+      }}
+      onMouseEnter={e => {
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.style.background = 'var(--bg-hover)';
+        btn.style.color = 'var(--text)';
+        btn.style.borderColor = 'var(--border-strong)';
+      }}
+      onMouseLeave={e => {
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.style.background = 'transparent';
+        btn.style.color = 'var(--text-muted)';
+        btn.style.borderColor = 'var(--border)';
+      }}
     >
-      {isDark
-        ? <Sun  className={`w-4 h-4 ${spinning ? 'theme-spin' : ''}`} style={{ color: 'rgba(255,255,255,0.5)' }} />
-        : <Moon className={`w-4 h-4 ${spinning ? 'theme-spin' : ''}`} style={{ color: 'rgba(60,80,120,0.8)' }} />}
+      <span className={spinning ? 'theme-spin' : ''} style={{ display: 'flex' }}>
+        {theme === 'dark' ? '🌞' : '🌙'}
+      </span>
     </button>
   );
 }
