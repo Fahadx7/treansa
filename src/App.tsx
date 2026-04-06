@@ -3579,7 +3579,7 @@ function App() {
               style={{ color: currentPage === 'intelligence' ? '#a78bfa' : 'rgba(255,255,255,0.45)' }}
             >
               <Zap className="w-4 h-4" />
-              <span>محرك الاستخبارات</span>
+              <span>الرادار الخفي</span>
               {currentPage === 'intelligence' && (
                 <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
               )}

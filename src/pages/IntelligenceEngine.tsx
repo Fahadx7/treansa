@@ -1,5 +1,5 @@
 /**
- * محرك الاستخبارات - Intelligence Engine
+ * الرادار الخفي - Intelligence Engine
  * مستوحى من MiroFish: تحليل متعدد الوكلاء + محاكاة السيناريوهات + ذاكرة السوق
  */
 
@@ -116,6 +116,13 @@ function addMemoryEntry(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): void {
   saveMemory(entries);
 }
 
+function parseScenarioData(raw: unknown): ScenarioResult {
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) as ScenarioResult; } catch { return {} as ScenarioResult; }
+  }
+  return (raw ?? {}) as ScenarioResult;
+}
+
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
   const m = Math.floor(diff / 60_000);
@@ -125,6 +132,123 @@ function timeAgo(ts: number): string {
   if (h < 24) return `منذ ${h} ساعة`;
   return `منذ ${Math.floor(h / 24)} يوم`;
 }
+
+// ─── Pattern Detection ────────────────────────────────────────────────────────
+
+function generatePriceHistory(stock: StockLike, points = 22): number[] {
+  const base = stock.price;
+  const trend = (stock.change ?? 0) / 100;
+  const volatility = (stock.atr ?? base * 0.015) / base;
+  const prices: number[] = [];
+  let p = base * (1 - trend * 0.65);
+  for (let i = 0; i < points; i++) {
+    const noise = (Math.sin(i * 2.3 + base) * 0.5 + Math.cos(i * 1.7 + base * 0.01) * 0.5) * volatility * base;
+    p = p * (1 + trend / points) + noise;
+    prices.push(Math.max(p, base * 0.5));
+  }
+  prices.push(base);
+  return prices;
+}
+
+function detectPatterns(prices: number[]): string[] {
+  if (prices.length < 6) return [];
+  const patterns: string[] = [];
+  const n = prices.length;
+  const last = prices[n - 1];
+  const body = prices.slice(0, n - 1);
+  const min = Math.min(...body);
+  const max = Math.max(...body);
+  const range = max - min || 1;
+
+  // Double bottom (W)
+  const minIdx = body.indexOf(min);
+  if (minIdx > 1 && minIdx < body.length - 2) {
+    const leftMin = Math.min(...body.slice(0, minIdx));
+    const rightMin = Math.min(...body.slice(minIdx + 1));
+    if (Math.abs(leftMin - rightMin) / range < 0.15 && last > (leftMin + rightMin) / 2 + range * 0.1) {
+      patterns.push('قاع مزدوج (W)');
+    }
+  }
+
+  // Double top (M)
+  const maxIdx = body.indexOf(max);
+  if (maxIdx > 1 && maxIdx < body.length - 2) {
+    const leftMax = Math.max(...body.slice(0, maxIdx));
+    const rightMax = Math.max(...body.slice(maxIdx + 1));
+    if (Math.abs(leftMax - rightMax) / range < 0.15 && last < (leftMax + rightMax) / 2 - range * 0.1) {
+      patterns.push('قمة مزدوجة (M)');
+    }
+  }
+
+  const recent = prices.slice(-5);
+  const upCount = recent.filter((p, i) => i > 0 && p > recent[i - 1]).length;
+  const downCount = recent.filter((p, i) => i > 0 && p < recent[i - 1]).length;
+  if (upCount >= 3) patterns.push('اتجاه صاعد');
+  if (downCount >= 3) patterns.push('اتجاه هابط');
+  if (last >= max * 0.97) patterns.push('اختراق مقاومة');
+  if (last <= min * 1.03) patterns.push('دعم قوي');
+
+  return patterns;
+}
+
+const ChartWithPatterns: React.FC<{ stock: StockLike }> = ({ stock }) => {
+  const prices = React.useMemo(() => generatePriceHistory(stock), [stock.symbol, stock.price]);
+  const patterns = React.useMemo(() => detectPatterns(prices), [prices]);
+  const W = 100;
+  const H = 48;
+  const lo = Math.min(...prices);
+  const hi = Math.max(...prices);
+  const rng = hi - lo || 1;
+  const toY = (p: number) => H - ((p - lo) / rng) * (H - 4) - 2;
+  const toX = (i: number) => (i / (prices.length - 1)) * W;
+  const pathD = prices.map((p, i) => `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)} ${toY(p).toFixed(1)}`).join(' ');
+  const color = stock.change >= 0 ? '#10b981' : '#f43f5e';
+
+  return (
+    <div className="mt-3 p-3 bg-app-bg border border-app-border rounded-xl">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] font-bold text-app-text">الأنماط المكتشفة</span>
+        {patterns.length === 0 && (
+          <span className="text-[10px] text-app-text-muted">لا توجد أنماط واضحة</span>
+        )}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 52 }}>
+        <defs>
+          <linearGradient id={`cg-${stock.symbol}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path
+          d={`${pathD} L ${toX(prices.length - 1).toFixed(1)} ${H} L 0 ${H} Z`}
+          fill={`url(#cg-${stock.symbol})`}
+        />
+        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={toX(prices.length - 1)} cy={toY(prices[prices.length - 1])} r="2" fill={color} />
+      </svg>
+      {patterns.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {patterns.map((pt, i) => {
+            const isPositive = pt.includes('صاعد') || pt.includes('اختراق') || pt.includes('قاع');
+            const isNegative = pt.includes('هابط') || pt.includes('قمة');
+            const bg = isPositive ? 'rgba(16,185,129,0.12)' : isNegative ? 'rgba(244,63,94,0.12)' : 'rgba(139,92,246,0.12)';
+            const clr = isPositive ? '#10b981' : isNegative ? '#f43f5e' : '#a78bfa';
+            const border = isPositive ? 'rgba(16,185,129,0.25)' : isNegative ? 'rgba(244,63,94,0.25)' : 'rgba(139,92,246,0.25)';
+            return (
+              <span
+                key={i}
+                className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                style={{ background: bg, color: clr, border: `1px solid ${border}` }}
+              >
+                {pt}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -289,13 +413,14 @@ const IntelligenceEngine: React.FC<Props> = ({ stocks }) => {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'فشل تحليل السيناريو');
 
-      setScenarioResult(data.result);
+      const parsed = parseScenarioData(data.result);
+      setScenarioResult(parsed);
 
       addMemoryEntry({
         type: 'scenario',
         title: `سيناريو: ${trimmed.slice(0, 50)}`,
-        summary: data.result.scenario_summary?.slice(0, 120) || '',
-        data: data.result,
+        summary: parsed.scenario_summary?.slice(0, 120) || '',
+        data: parsed,
       });
       setMemory(loadMemory());
     } catch (e: any) {
@@ -343,8 +468,8 @@ const IntelligenceEngine: React.FC<Props> = ({ stocks }) => {
             <Brain className="w-5 h-5 text-violet-400" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-app-text">محرك الاستخبارات</h1>
-            <p className="text-xs text-app-text-muted">تحليل متعدد الوكلاء · محاكاة السيناريوهات · ذاكرة السوق</p>
+            <h1 className="text-lg font-bold text-app-text">الرادار الخفي</h1>
+            <p className="text-xs text-app-text-muted">يصيد الفرص من الأعماق</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-app-text-muted bg-app-surface border border-app-border rounded-full px-3 py-1.5">
@@ -421,20 +546,23 @@ const IntelligenceEngine: React.FC<Props> = ({ stocks }) => {
               </div>
 
               {selectedStock && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="flex flex-wrap gap-3 p-3 bg-app-bg rounded-xl border border-app-border text-xs text-app-text-muted"
-                >
-                  <span className="font-mono font-bold text-app-text">{selectedStock.symbol}</span>
-                  <span>{selectedStock.companyName}</span>
-                  <span>السعر: <b className="text-app-text">{selectedStock.price?.toFixed(2)}</b> ر.س</span>
-                  <span className={selectedStock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                    {selectedStock.change >= 0 ? '+' : ''}{selectedStock.change?.toFixed(2)}%
-                  </span>
-                  {selectedStock.rsi !== undefined && <span>RSI: <b className="text-app-text">{selectedStock.rsi.toFixed(1)}</b></span>}
-                  {selectedStock.wave && <span>موجة: <b className="text-app-text">{selectedStock.wave}</b></span>}
-                </motion.div>
+                <>
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="flex flex-wrap gap-3 p-3 bg-app-bg rounded-xl border border-app-border text-xs text-app-text-muted"
+                  >
+                    <span className="font-mono font-bold text-app-text">{selectedStock.symbol}</span>
+                    <span>{selectedStock.companyName}</span>
+                    <span>السعر: <b className="text-app-text">{selectedStock.price?.toFixed(2)}</b> ر.س</span>
+                    <span className={selectedStock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      {selectedStock.change >= 0 ? '+' : ''}{selectedStock.change?.toFixed(2)}%
+                    </span>
+                    {selectedStock.rsi !== undefined && <span>RSI: <b className="text-app-text">{selectedStock.rsi.toFixed(1)}</b></span>}
+                    {selectedStock.wave && <span>موجة: <b className="text-app-text">{selectedStock.wave}</b></span>}
+                  </motion.div>
+                  <ChartWithPatterns stock={selectedStock} />
+                </>
               )}
 
               <button
