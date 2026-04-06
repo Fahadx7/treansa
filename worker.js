@@ -336,7 +336,19 @@ async function fetchChartFromStooq(symbol, range) {
     }
   } catch (e) { console.log(`[chart] corsproxy err: ${e.message}`); }
 
-  // Attempt 3: corsproxy.io → Yahoo Finance
+  // Attempt 3: codetabs proxy → stooq
+  try {
+    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(stooqUrl)}`;
+    const res = await fetchWithTimeout(proxyUrl, { headers: { 'User-Agent': ua } }, 10000);
+    console.log(`[chart] codetabs+stooq: ${res?.status}`);
+    if (res?.ok) {
+      const csv = await res.text();
+      const parsed = parseStooqCSV(csv, symbol);
+      if (parsed) { console.log(`[chart] codetabs OK`); return parsed; }
+    }
+  } catch (e) { console.log(`[chart] codetabs err: ${e.message}`); }
+
+  // Attempt 4: corsproxy.io → Yahoo Finance
   try {
     const cfg2 = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
     const p1 = cfg2.period1();
@@ -1110,8 +1122,8 @@ export default {
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: 'ca4bc8b',
-        features: ['twelve-data', 'theme-toggle', 'stooq-rt', 'corsproxy'],
+        version: 'f3a91d2',
+        features: ['twelve-data', 'theme-toggle', 'stooq-rt', 'corsproxy', 'codetabs'],
         twelve_data_key: !!env.TWELVE_DATA_KEY,
         ai: !!env.AI,
         ts: new Date().toISOString(),
