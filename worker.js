@@ -1110,8 +1110,10 @@ export default {
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
+        version: 'ca4bc8b',
+        features: ['twelve-data', 'theme-toggle', 'stooq-rt', 'corsproxy'],
+        twelve_data_key: !!env.TWELVE_DATA_KEY,
         ai: !!env.AI,
-        assets: !!env.ASSETS,
         ts: new Date().toISOString(),
         cf: request.cf ? { country: request.cf.country, colo: request.cf.colo } : null,
       });
