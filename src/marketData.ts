@@ -77,6 +77,39 @@ export function loadLastKnownTasi(ignoreTTL = false): TASIData | null {
 }
 
 export async function fetchTASI(): Promise<TASIData> {
+  const workerBase = (import.meta as any).env?.VITE_API_WORKER_URL ?? '';
+
+  // Strategy 1: trandsa-api Worker
+  if (workerBase) {
+    try {
+      const res = await fetch(
+        `${workerBase}/api/chart?symbol=%5ETASI.SR&range=1d&interval=1d`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.regularMarketPrice > 0) {
+          const price  = data.regularMarketPrice as number;
+          const prev   = (data.previousClose ?? price) as number;
+          const change = +(price - prev).toFixed(2);
+          const last   = Array.isArray(data.data) && data.data.length > 0 ? data.data[data.data.length - 1] : null;
+          const result: TASIData = {
+            price,
+            change,
+            changePercent: prev > 0 ? +((change / prev) * 100).toFixed(2) : 0,
+            high:   last?.high  ?? price,
+            low:    last?.low   ?? price,
+            volume: last?.volume ?? 0,
+            time:   new Date().toISOString(),
+          };
+          saveLastKnownTasi(result);
+          return result;
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Strategy 2: local /api/tasi-index
   const res = await fetch('/api/tasi-index');
   if (!res.ok) throw new Error(`TASI API: HTTP ${res.status}`);
   const data = await res.json();
