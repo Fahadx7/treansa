@@ -122,7 +122,7 @@ async function handleCommodities() {
     { key: 'brent', symbol: 'BZ=F' },
     { key: 'gold',  symbol: 'GC=F' },
   ];
-  const result = { success: true, brent: 0, gold: 0 };
+  const result = { success: true, brent: 0, gold: 0, brentChange: 0, goldChange: 0 };
 
   await Promise.all(items.map(async ({ key, symbol }) => {
     try {
@@ -131,8 +131,12 @@ async function handleCommodities() {
       );
       if (!res?.ok) return;
       const data = await res.json();
-      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (price) result[key] = price;
+      const meta  = data?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice;
+      if (!price) return;
+      result[key] = price;
+      const prev = meta?.chartPreviousClose ?? meta?.previousClose ?? 0;
+      result[`${key}Change`] = prev > 0 ? ((price - prev) / prev) * 100 : 0;
     } catch { /* skip */ }
   }));
 

@@ -57,12 +57,11 @@ export const handlers = [
   // Commodities
   http.get('/api/commodities', () =>
     HttpResponse.json({
-      ok: true,
-      items: [
-        { label: 'ذهب', price: 3300.5, change: 0.4 },
-        { label: 'برنت', price: 82.1, change: -0.2 },
-        { label: 'فضة', price: 33.2, change: 0.8 },
-      ],
+      success: true,
+      brent: 82.1,
+      gold: 3300.5,
+      brentChange: -0.24,
+      goldChange: 0.41,
     }),
   ),
 

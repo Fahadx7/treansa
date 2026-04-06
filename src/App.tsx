@@ -3129,8 +3129,8 @@ function App() {
         const data = await res.json();
         if (!data.success) return;
         const items: CommodityItem[] = [
-          { label: 'برنت', icon: '🛢️', prefix: '$', price: data.brent, changePercent: 0 },
-          { label: 'ذهب',  icon: '🥇', prefix: '$', price: data.gold,  changePercent: 0 },
+          { label: 'برنت', icon: '🛢️', prefix: '$', price: data.brent, changePercent: data.brentChange ?? 0 },
+          { label: 'ذهب',  icon: '🥇', prefix: '$', price: data.gold,  changePercent: data.goldChange  ?? 0 },
         ].filter(c => c.price > 0);
         if (items.length > 0) setCommodities(items);
       } catch { /* silent fail */ } finally {
