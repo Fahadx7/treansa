@@ -32,8 +32,8 @@ export const handler: Handler = async (event) => {
   }
 
   const cfg = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
-  // "2222.SR" → "2222:XSAU"
-  const tdSym = symbol.replace(/\.SR$/i, '') + ':XSAU';
+  // "2222.SR" or "^TASI" → "2222:XSAU" or "TASI:XSAU"
+  const tdSym = decodeURIComponent(symbol).replace(/^\^/, '').replace(/\.SR$/i, '') + ':XSAU';
 
   try {
     const url = `${BASE}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${cfg.interval}&outputsize=${cfg.outputsize}&apikey=${API_KEY}`;
