@@ -1,9 +1,10 @@
 /**
- * محرك الاستخبارات - Intelligence Engine
+ * الرادار الخفي - Intelligence Engine
  * مستوحى من MiroFish: تحليل متعدد الوكلاء + محاكاة السيناريوهات + ذاكرة السوق
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { safeString } from '../utils/parseScenarioData';
 import {
   Brain,
   Zap,
@@ -294,7 +295,7 @@ const IntelligenceEngine: React.FC<Props> = ({ stocks }) => {
       addMemoryEntry({
         type: 'scenario',
         title: `سيناريو: ${trimmed.slice(0, 50)}`,
-        summary: data.result.scenario_summary?.slice(0, 120) || '',
+        summary: safeString(data.result.scenario_summary).slice(0, 120),
         data: data.result,
       });
       setMemory(loadMemory());
@@ -340,11 +341,11 @@ const IntelligenceEngine: React.FC<Props> = ({ stocks }) => {
       >
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20">
-            <Brain className="w-5 h-5 text-violet-400" />
+            <Zap className="w-5 h-5 text-violet-400" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-app-text">محرك الاستخبارات</h1>
-            <p className="text-xs text-app-text-muted">تحليل متعدد الوكلاء · محاكاة السيناريوهات · ذاكرة السوق</p>
+            <h1 className="text-lg font-bold text-app-text">الرادار الخفي</h1>
+            <p className="text-xs text-app-text-muted">يصيد الفرص من الأعماق · تحليل متعدد الوكلاء · ذاكرة السوق</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-app-text-muted bg-app-surface border border-app-border rounded-full px-3 py-1.5">

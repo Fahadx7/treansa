@@ -39,6 +39,8 @@ import {
 import { ThemeToggle } from './components/ThemeToggle';
 import AIAdvisor from './pages/AIAdvisor';
 import IntelligenceEngine from './pages/IntelligenceEngine';
+import { detectPatterns, BIAS_COLORS } from './utils/chartPatterns';
+import { safeString } from './utils/parseScenarioData';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1065,10 +1067,9 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
   const riskResult = calcRisk();
   // Merge live indicators (computed from chart) over the basic quote data
   const ds = liveIndicators ? { ...stock, ...liveIndicators } : stock;
-  const patternSignals = detectChartPatternsFromSeries(
-    history.map((entry: any) => entry.price).filter((value: number) => typeof value === 'number' && !Number.isNaN(value)),
-    stock.price,
-  );
+  const pricesSeries = history.map((entry: any) => entry.price).filter((value: number) => typeof value === 'number' && !Number.isNaN(value));
+  const patternSignals = detectChartPatternsFromSeries(pricesSeries, stock.price);
+  const advancedPatterns = detectPatterns(pricesSeries);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -1568,6 +1569,28 @@ const StockDetailsModal = ({ stock, onClose, watchlist, onToggleWatchlist }: {
                   </div>
 
                   <PatternSignalsPanel signals={patternSignals} />
+
+                  {/* نماذج فنية متقدمة */}
+                  {advancedPatterns.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-bold text-app-text-muted uppercase tracking-wider px-1">نماذج فنية مكتشفة</div>
+                      <div className="flex flex-wrap gap-2">
+                        {advancedPatterns.map((p, i) => {
+                          const colors = BIAS_COLORS[p.bias as keyof typeof BIAS_COLORS] ?? BIAS_COLORS.neutral;
+                          return (
+                            <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${colors.bg} ${colors.border} cursor-default`} title={p.note}>
+                              <span className="text-base leading-none">{p.emoji}</span>
+                              <div>
+                                <div className={`text-[11px] font-bold ${colors.text}`}>{p.name}</div>
+                                <div className="text-[9px] text-app-text-muted">{p.confidence}% ثقة · {colors.badge}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="text-[10px] text-app-text-muted px-1">{advancedPatterns[0]?.note}</div>
+                    </div>
+                  )}
 
                   {/* AI Analyst Section */}
                   <div className="space-y-4 pt-4 border-t border-app-border">
@@ -3579,7 +3602,7 @@ function App() {
               style={{ color: currentPage === 'intelligence' ? '#a78bfa' : 'rgba(255,255,255,0.45)' }}
             >
               <Zap className="w-4 h-4" />
-              <span>محرك الاستخبارات</span>
+              <span>الرادار الخفي</span>
               {currentPage === 'intelligence' && (
                 <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
               )}
