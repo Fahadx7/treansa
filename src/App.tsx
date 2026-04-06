@@ -733,9 +733,11 @@ const MarketIndexModal = ({
     load();
   }, [chartPeriod]);
 
-  const syntheticQuotes = buildSyntheticQuotesFromPrices(history.length > 1 ? history : [indexData.price, indexData.price]);
+  const chartPrices = chartHistory.length > 1 ? chartHistory.map((h: any) => h.price as number) : [];
+  const effectivePrices = chartPrices.length > 1 ? chartPrices : (history.length > 1 ? history : [indexData.price, indexData.price]);
+  const syntheticQuotes = buildSyntheticQuotesFromPrices(effectivePrices);
   const indicators = computeIndicators(syntheticQuotes);
-  const patterns = detectChartPatternsFromSeries(history.length > 1 ? history : [indexData.price], indexData.price);
+  const patterns = detectChartPatternsFromSeries(effectivePrices, indexData.price);
   const gainers = stocks.filter(s => s.change > 0).sort((a, b) => b.change - a.change).slice(0, 5);
   const losers = stocks.filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 5);
   const upCount = stocks.filter(s => s.change > 0).length;
