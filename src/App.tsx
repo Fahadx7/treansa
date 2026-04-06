@@ -2628,7 +2628,7 @@ function App() {
   const sentRadarAlertsRef = useRef(new Set<string>());
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
-  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor' | 'intelligence'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor' | 'intelligence' | 'margin'>('home');
   const [indexQuotes, setIndexQuotes] = useState<Record<string, { price: number; change: number; changePercent: number }>>({});
   const [commodities, setCommodities] = useState<CommodityItem[]>([]);
   const [commoditiesLoading, setCommoditiesLoading] = useState(true);
@@ -3584,6 +3584,17 @@ function App() {
                 <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
               )}
             </button>
+            <button
+              onClick={() => setCurrentPage('margin')}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold transition-all relative"
+              style={{ color: currentPage === 'margin' ? '#f59e0b' : 'rgba(255,255,255,0.45)' }}
+            >
+              <Wallet className="w-4 h-4" />
+              <span>الهامش</span>
+              {currentPage === 'margin' && (
+                <motion.div layoutId="pageTab" className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style={{ background: '#f59e0b' }} />
+              )}
+            </button>
           </div>
         </div>
       </nav>
@@ -3596,6 +3607,19 @@ function App() {
 
       {/* ── Intelligence Engine Page ─────────────────────────────────────── */}
       {currentPage === 'intelligence' && <IntelligenceEngine stocks={status?.tickerData ?? []} />}
+
+      {/* ── Margin Trading Page ──────────────────────────────────────────── */}
+      {currentPage === 'margin' && (
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <MarginTrading
+            user={user}
+            marginAccount={marginAccount}
+            marginPositions={marginPositions}
+            tickerData={status?.tickerData ?? []}
+            onClosePosition={closeMarginPosition}
+          />
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8" style={{ display: currentPage === 'home' ? undefined : 'none' }}>
         {/* Inline error banner */}
