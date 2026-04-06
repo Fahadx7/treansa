@@ -405,6 +405,57 @@ function quotesFromSpark(data, symbol) {
   return { success: true, meta: result.meta ?? { symbol }, quotes, source: 'spark' };
 }
 
+// ─── /api/chart — lightweight Yahoo Finance v8 proxy ─────────────────────────
+// ?symbol=2222.SR&range=1mo&interval=1d
+// Returns raw Yahoo Finance chart result (quotes array) with CORS headers.
+
+async function fetchChart(symbol, range = '1mo', interval = '1d') {
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+  const res = await yahooFetch(path);
+  if (!res?.ok) return null;
+  return res.json();
+}
+
+async function handleChart(url) {
+  const symbol   = url.searchParams.get('symbol') ?? '';
+  const range    = url.searchParams.get('range')    ?? '1mo';
+  const interval = url.searchParams.get('interval') ?? (SPARK_INTERVAL[range] ?? '1d');
+
+  if (!symbol) return json({ success: false, error: 'symbol required' }, 400);
+
+  const cacheKey = `chart_${symbol}_${range}_${interval}`;
+  const hit = chartCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < TTL) return json(hit.data);
+
+  try {
+    const data = await fetchChart(symbol, range, interval);
+    const result = data?.chart?.result?.[0];
+    if (!result?.timestamp?.length) {
+      return json({ success: false, error: `لا توجد بيانات للرمز: ${symbol}` }, 404);
+    }
+
+    const quote = result.indicators?.quote?.[0] ?? {};
+    const quotes = result.timestamp
+      .map((t, i) => ({
+        date:   new Date(t * 1000).toISOString(),
+        open:   quote.open?.[i]   ?? 0,
+        high:   quote.high?.[i]   ?? 0,
+        low:    quote.low?.[i]    ?? 0,
+        close:  quote.close?.[i]  ?? 0,
+        volume: quote.volume?.[i] ?? 0,
+      }))
+      .filter(q => q.close > 0);
+
+    if (!quotes.length) return json({ success: false, error: 'بيانات فارغة' }, 404);
+
+    const payload = { success: true, meta: result.meta, quotes };
+    chartCache.set(cacheKey, { data: payload, ts: Date.now() });
+    return json(payload);
+  } catch (e) {
+    return json({ success: false, error: e.message ?? 'خطأ في جلب البيانات' }, 500);
+  }
+}
+
 async function handleStockChart(url, env) {
   const symbol = url.searchParams.get('symbol') ?? '';
   const range  = url.searchParams.get('range')  ?? '1mo';
@@ -1136,6 +1187,7 @@ export default {
     if (url.pathname === '/api/commodities')              return handleCommodities();
     if (url.pathname.startsWith('/api/stock-price'))      return handleStockPrice(url);
     if (url.pathname.startsWith('/api/stock-chart'))      return handleStockChart(url, env);
+    if (url.pathname.startsWith('/api/chart'))            return handleChart(url);
 
     // POST endpoints (Cloudflare Workers AI)
     if (request.method === 'POST') {
