@@ -1104,37 +1104,35 @@ async function startServer() {
         const hit = tdChartCache.get(cacheKey);
         if (hit && Date.now() - hit.ts < TD_TTL) return res.json(hit.data);
 
-        const RANGE_MAP: Record<string, { interval: string; outputsize: number }> = {
-            '1d':  { interval: '5min',   outputsize: 78  },
-            '1w':  { interval: '1h',     outputsize: 168 },
-            '1mo': { interval: '1day',   outputsize: 30  },
-            '6mo': { interval: '1day',   outputsize: 180 },
-            '1y':  { interval: '1week',  outputsize: 52  },
-            '5y':  { interval: '1month', outputsize: 60  },
+        const YF_RANGE_MAP: Record<string, { period1: number; interval: string }> = {
+            '1d':  { period1: Math.floor(Date.now() / 1000) - 86400,     interval: '5m'  },
+            '1w':  { period1: Math.floor(Date.now() / 1000) - 604800,    interval: '1h'  },
+            '1mo': { period1: Math.floor(Date.now() / 1000) - 2592000,   interval: '1d'  },
+            '6mo': { period1: Math.floor(Date.now() / 1000) - 15552000,  interval: '1d'  },
+            '1y':  { period1: Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk' },
+            '5y':  { period1: Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
         };
-        const cfg = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
-        const tdSym = symbol.replace(/\.SR$/i, '') + ':XSAU';
+        const cfg = YF_RANGE_MAP[range] ?? YF_RANGE_MAP['1mo'];
+        const period2 = Math.floor(Date.now() / 1000);
 
         try {
-            const url = `${TD_BASE}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${cfg.interval}&outputsize=${cfg.outputsize}&apikey=${TD_API_KEY}`;
-            const r = await fetch(url);
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${cfg.period1}&period2=${period2}&interval=${cfg.interval}`;
+            const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const data: any = await r.json();
-            if (data.status === 'error') throw new Error(data.message ?? 'Twelve Data error');
-
-            const quotes = (data.values ?? [])
-                .reverse()
-                .map((v: any) => ({
-                    date:   new Date(v.datetime).toISOString(),
-                    open:   parseFloat(v.open   ?? '0'),
-                    high:   parseFloat(v.high   ?? '0'),
-                    low:    parseFloat(v.low    ?? '0'),
-                    close:  parseFloat(v.close  ?? '0'),
-                    volume: parseInt(v.volume   ?? '0', 10),
-                }))
-                .filter((q: any) => q.close > 0);
-
-            const result = { success: true, meta: data.meta ?? {}, quotes };
+            const result_yf = data?.chart?.result?.[0];
+            if (!result_yf) throw new Error('No data from Yahoo Finance');
+            const timestamps: number[] = result_yf.timestamp ?? [];
+            const quote = result_yf.indicators?.quote?.[0] ?? {};
+            const quotes = timestamps.map((t: number, i: number) => ({
+                date:   new Date(t * 1000).toISOString(),
+                open:   quote.open?.[i]   ?? 0,
+                high:   quote.high?.[i]   ?? 0,
+                low:    quote.low?.[i]    ?? 0,
+                close:  quote.close?.[i]  ?? 0,
+                volume: quote.volume?.[i] ?? 0,
+            })).filter((q: any) => q.close > 0);
+            const result = { success: true, meta: result_yf.meta ?? {}, quotes };
             tdChartCache.set(cacheKey, { data: result, ts: Date.now() });
             res.json(result);
         } catch (e: any) {
@@ -1147,21 +1145,27 @@ async function startServer() {
     app.get('/api/tasi-index', async (_req, res) => {
         if (tasiCache && Date.now() - tasiCache.ts < TD_TTL) return res.json(tasiCache.data);
         try {
-            const r = await fetch(`${TD_BASE}/quote?symbol=TASI:XSAU&apikey=${TD_API_KEY}`);
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const q: any = await r.json();
-            if (q.status === 'error' || !q.close) throw new Error(q.message || 'No TASI data');
-            const price = parseFloat(q.close);
+            const r = await fetch('https://stooq.com/q/l/?s=^tasi&f=sd2t2ohlcv&h&e=json', {
+                headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' },
+            });
+            if (!r.ok) throw new Error(`Stooq HTTP ${r.status}`);
+            const data: any = await r.json();
+            const q = data?.symbols?.[0];
+            if (!q || !q.close) throw new Error('No TASI data from Stooq');
+            const price = parseFloat(String(q.close));
+            const open  = parseFloat(String(q.open ?? q.close));
             if (price < 1000) throw new Error(`Unexpected TASI price: ${price}`);
+            const change        = price - open;
+            const changePercent = open !== 0 ? (change / open) * 100 : 0;
             const result = {
                 success:       true,
                 price,
-                change:        parseFloat(q.change        ?? '0'),
-                changePercent: parseFloat(q.percent_change ?? '0'),
-                high:          parseFloat(q.high           ?? q.close),
-                low:           parseFloat(q.low            ?? q.close),
-                volume:        parseInt(q.volume           ?? '0', 10),
-                time:          new Date().toISOString(),
+                change,
+                changePercent,
+                high:    parseFloat(String(q.high   ?? q.close)),
+                low:     parseFloat(String(q.low    ?? q.close)),
+                volume:  parseInt(String(q.volume   ?? '0'), 10),
+                time:    new Date().toISOString(),
             };
             tasiCache = { data: result, ts: Date.now() };
             res.json(result);

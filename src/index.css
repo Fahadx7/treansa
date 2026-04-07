@@ -1,10 +1,10 @@
 *, *::before, *::after {
-  --bg-primary: #060d1f !important;
-  --bg-card: #112240 !important;
+  --bg-primary: #0a0a0f !important;
+  --bg-card: #1a1a2e !important;
 }
 
 body, #root, .app {
-  background-color: #060d1f !important;
+  background-color: #0a0a0f !important;
 }
 
 @import "tailwindcss";
@@ -20,15 +20,15 @@ body, #root, .app {
 /* ─── Dark mode tokens — default (platform is dark-only) ─── */
 :root,
 .dark {
-  --bg:          #060b14;
-  --surface:     #0d1421;
-  --border:      #1e2d40;
-  --text:        #e8f0fe;
-  --text-muted:  #637898;
-  --positive:    #00c896;
-  --negative:    #ff3d5a;
-  --neutral:     #637898;
-  --accent-blue: #4d9fec;
+  --bg:          #0a0a0f;
+  --surface:     #1a1a2e;
+  --border:      rgba(255,255,255,0.07);
+  --text:        #f0f0ff;
+  --text-muted:  #6b7280;
+  --positive:    #00ff88;
+  --negative:    #ff4444;
+  --neutral:     #6b7280;
+  --accent-blue: #3b82f6;
   --shadow-card: 0 1px 4px rgba(0,0,0,0.7), 0 4px 20px rgba(0,0,0,0.5);
   --shadow-hover: 0 6px 32px rgba(0,0,0,0.7);
   --shadow-modal: 0 28px 80px rgba(0,0,0,0.85);
@@ -94,9 +94,9 @@ input, select, textarea {
 .stat-card.accent-slate    { border-right: 3px solid #64748b; }
 
 /* Subtle gradient tint per accent in dark mode */
-.dark .stat-card.accent-positive { background: linear-gradient(145deg, #0d1e3a 0%, rgba(0,200,150,0.06) 100%); }
-.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #0d1e3a 0%, rgba(245,158,11,0.06) 100%); }
-.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #0d1e3a 0%, rgba(77,159,236,0.06) 100%); }
+.dark .stat-card.accent-positive { background: linear-gradient(145deg, #1a1a2e 0%, rgba(0,255,136,0.06) 100%); }
+.dark .stat-card.accent-amber    { background: linear-gradient(145deg, #1a1a2e 0%, rgba(245,158,11,0.06) 100%); }
+.dark .stat-card.accent-blue     { background: linear-gradient(145deg, #1a1a2e 0%, rgba(59,130,246,0.06) 100%); }
 
 /* ─── Glassmorphism badge ─── */
 .glass-badge {
@@ -114,7 +114,7 @@ input, select, textarea {
   letter-spacing: 0.01em;
 }
 
-.glass-badge.emerald { background: rgba(0,212,170,0.12); border-color: rgba(0,212,170,0.25); color: #00d4aa; }
+.glass-badge.emerald { background: rgba(0,255,136,0.12); border-color: rgba(0,255,136,0.25); color: #00ff88; }
 .glass-badge.amber   { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.25); color: #f59e0b; }
 .glass-badge.blue    { background: rgba(59,130,246,0.12);  border-color: rgba(59,130,246,0.25);  color: #60a5fa; }
 .glass-badge.slate   { background: rgba(100,116,139,0.10); border-color: rgba(100,116,139,0.20); color: #94a3b8; }
@@ -124,8 +124,8 @@ input, select, textarea {
 .zebra-row:nth-child(even) { background: rgba(128,128,128,0.04); }
 .dark .zebra-row:nth-child(even) { background: rgba(255,255,255,0.025); }
 .zebra-row { transition: background-color 0.15s ease !important; }
-.zebra-row:hover { background: rgba(0,212,170,0.05) !important; }
-.dark .zebra-row:hover { background: rgba(0,212,170,0.06) !important; }
+.zebra-row:hover { background: rgba(0,255,136,0.05) !important; }
+.dark .zebra-row:hover { background: rgba(0,255,136,0.06) !important; }
 
 /* ─── Tabular numbers ─── */
 .num { font-variant-numeric: tabular-nums; }
@@ -172,7 +172,7 @@ body { overscroll-behavior-y: none; }
 /* ─── Subtle dot-grid page background ─── */
 .dark body {
   background-image:
-    radial-gradient(circle at 1px 1px, rgba(99,179,237,0.06) 1px, transparent 0);
+    radial-gradient(circle at 1px 1px, rgba(0,255,136,0.04) 1px, transparent 0);
   background-size: 28px 28px;
 }
 
@@ -189,8 +189,8 @@ body { overscroll-behavior-y: none; }
 
 /* ─── Logo pulse ring ─── */
 @keyframes logo-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(0,212,170,0.4); }
-  50%       { box-shadow: 0 0 0 8px rgba(0,212,170,0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,255,136,0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(0,255,136,0); }
 }
 .logo-pulse { animation: logo-pulse 2.5s ease-in-out infinite; }
 

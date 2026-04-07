@@ -4,6 +4,9 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { StockLayout } from './components/layout/StockLayout';
+import { StockDashboard } from './components/stock/StockDashboard';
 import { 
   Radar, 
   TrendingUp, 
@@ -2520,12 +2523,19 @@ function CommoditiesBar({ items, loading }: { items: CommodityItem[]; loading: b
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
-      <App />
+      <Routes>
+        <Route path="/" element={<StockLayout><StockDashboard /></StockLayout>} />
+        <Route path="/radar" element={<StockLayout><App hideHeader={true} /></StockLayout>} />
+        <Route path="/ai-advisor" element={<StockLayout><App hideHeader={true} /></StockLayout>} />
+        <Route path="/intelligence" element={<StockLayout><App hideHeader={true} /></StockLayout>} />
+        <Route path="/*" element={<App />} />
+      </Routes>
     </ErrorBoundary>
   );
 }
 
-function App() {
+function App({ hideHeader = false }: { hideHeader?: boolean }) {
+  const location = useLocation();
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
@@ -2545,7 +2555,17 @@ function App() {
   const sentRadarAlertsRef = useRef(new Set<string>());
   // Rolling TASI price history for sparkline (last 20 data points)
   const tasiHistoryRef = useRef<number[]>([]);
-  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor' | 'intelligence'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'ai-advisor' | 'intelligence'>(() => {
+    if (location.pathname === '/ai-advisor') return 'ai-advisor';
+    if (location.pathname === '/intelligence') return 'intelligence';
+    return 'home';
+  });
+
+  useEffect(() => {
+    if (location.pathname === '/ai-advisor') setCurrentPage('ai-advisor');
+    else if (location.pathname === '/intelligence') setCurrentPage('intelligence');
+    else setCurrentPage('home');
+  }, [location.pathname]);
   const [indexQuotes, setIndexQuotes] = useState<Record<string, { price: number; change: number; changePercent: number }>>({});
   const [commodities, setCommodities] = useState<CommodityItem[]>([]);
   const [commoditiesLoading, setCommoditiesLoading] = useState(true);
@@ -3312,7 +3332,7 @@ function App() {
       })()}
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header
+      {!hideHeader && <header
         className="sticky z-[80] safe-top"
         style={{
           top: 40,
@@ -3467,10 +3487,10 @@ function App() {
           </div>
 
         </div>
-      </header>
+      </header>}
 
       {/* ── Page Navigation Bar ─────────────────────────────────────────── */}
-      <nav
+      {!hideHeader && <nav
         className="sticky top-[100px] z-[70]"
         style={{ background: 'rgba(6,11,20,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(99,179,237,0.1)' }}
       >
@@ -3511,7 +3531,7 @@ function App() {
             </button>
           </div>
         </div>
-      </nav>
+      </nav>}
 
       {/* ── Commodities Bar ─────────────────────────────────────────────── */}
       <CommoditiesBar items={commodities} loading={commoditiesLoading} />
