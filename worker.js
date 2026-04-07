@@ -169,7 +169,8 @@ const RANGE_MAP = {
   '1mo': { period1: () => Math.floor(Date.now() / 1000) - 2592000,   interval: '1d',  days: 35  },
   '6mo': { period1: () => Math.floor(Date.now() / 1000) - 15552000,  interval: '1d',  days: 185 },
   '1y':  { period1: () => Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk', days: 370 },
-  '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo', days: 1826 },
+  '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo', days: 1250 },
+  '10y': { period1: () => Math.floor(Date.now() / 1000) - 315360000, interval: '1mo', days: 2500 },
 };
 
 // ─── Seeded deterministic RNG (LCG) ─────────────────────────────────────────
@@ -220,7 +221,7 @@ async function buildTasiChart(range) {
   }
 
   // Daily: deterministic walk backwards from today's close
-  const DAYS_MAP = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250 };
+  const DAYS_MAP = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250, '5y': 1250, '10y': 2500 };
   const days = DAYS_MAP[range] ?? 22;
   const DAILY_VOL = 0.007; // 0.7% typical TASI daily volatility
   const rng = makeRng(seed + days);

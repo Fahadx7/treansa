@@ -1136,7 +1136,7 @@ async function startServer() {
             return quotes;
         }
 
-        const DAYS_MAP: Record<string, number> = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250 };
+        const DAYS_MAP: Record<string, number> = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250, '5y': 1250, '10y': 2500 };
         const days     = DAYS_MAP[range] ?? 22;
         const DAILY_VOL = 0.007;
         const rng      = makeRng(seed + days);
@@ -1190,6 +1190,7 @@ async function startServer() {
             '6mo': { period1: Math.floor(Date.now() / 1000) - 15552000,  interval: '1d'  },
             '1y':  { period1: Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk' },
             '5y':  { period1: Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
+            '10y': { period1: Math.floor(Date.now() / 1000) - 315360000, interval: '1mo' },
         };
         const cfg    = YF_RANGE_MAP[range] ?? YF_RANGE_MAP['1mo'];
         const period2 = Math.floor(Date.now() / 1000);

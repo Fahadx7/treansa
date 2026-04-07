@@ -10,7 +10,7 @@ import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 interface Quote    { date: string; close: number }
 interface TASIData { price: number; change: number; changePercent: number; high: number; low: number }
 
-type Range = '1d' | '1w' | '1mo' | '6mo' | '1y';
+type Range = '1d' | '1w' | '1mo' | '6mo' | '1y' | '5y' | '10y';
 
 const RANGES: { key: Range; label: string }[] = [
   { key: '1d',  label: 'اليوم'  },
@@ -18,6 +18,8 @@ const RANGES: { key: Range; label: string }[] = [
   { key: '1mo', label: 'شهر'    },
   { key: '6mo', label: '٣ أشهر' },
   { key: '1y',  label: 'سنة'    },
+  { key: '5y',  label: '٥ سنوات' },
+  { key: '10y', label: '١٠ سنوات' },
 ];
 
 /* ─── Custom Tooltip ─── */
