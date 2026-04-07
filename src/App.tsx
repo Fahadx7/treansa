@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import AIAdvisor from './pages/AIAdvisor';
 import IntelligenceEngine from './pages/IntelligenceEngine';
+import { TASIChart } from './components/stock/TASIChart';
 // GoogleGenAI calls now go through /api/* backend endpoints (key stays server-side)
 import Markdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
@@ -799,34 +800,7 @@ const MarketIndexModal = ({
 
             <div className="grid grid-cols-1 xl:grid-cols-[1.45fr_0.95fr] gap-6">
               <div className="space-y-4">
-                <div className="rounded-3xl border border-app-border bg-app-bg/20 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-sm font-bold text-app-text">السجل اللحظي للمؤشر</div>
-                      <div className="text-[11px] text-app-text-muted">يبنى من آخر نقاط التحديث المتراكمة داخل الجلسة الحالية</div>
-                    </div>
-                    <div className={`text-xs font-bold px-2.5 py-1 rounded-full ${isUp ? 'bg-emerald-500/12 text-emerald-400' : 'bg-rose-500/12 text-rose-400'}`}>
-                      {isUp ? 'ميل صاعد' : 'ميل هابط'}
-                    </div>
-                  </div>
-                  <div className="h-[360px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData}>
-                        <defs>
-                          <linearGradient id="tasiHistoryFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.28}/>
-                            <stop offset="95%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.02}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-app-border)" vertical={false} />
-                        <XAxis dataKey="time" stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} />
-                        <YAxis stroke="var(--color-app-text-muted)" fontSize={10} tickLine={false} axisLine={false} orientation="right" domain={['auto', 'auto']} />
-                        <Tooltip contentStyle={{ backgroundColor: 'var(--color-app-surface)', border: '1px solid var(--color-app-border)' }} />
-                        <Area type="monotone" dataKey="price" stroke={isUp ? '#10b981' : '#ef4444'} fill="url(#tasiHistoryFill)" strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+                <TASIChart />
 
                 <PatternSignalsPanel signals={patterns} title="النماذج المحتملة على المؤشر العام" />
               </div>
