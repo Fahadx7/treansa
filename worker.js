@@ -161,16 +161,48 @@ async function handleStockPrice(url) {
   return json({ success: true, result: results });
 }
 
-// ─── Stock Chart (Yahoo Finance) ─────────────────────────────────────────────
+// ─── Stock Chart (Yahoo Finance + Stooq fallback for ^TASI) ──────────────────
 
 const RANGE_MAP = {
-  '1d':  { period1: () => Math.floor(Date.now() / 1000) - 86400,     interval: '5m'  },
-  '1w':  { period1: () => Math.floor(Date.now() / 1000) - 604800,    interval: '1h'  },
-  '1mo': { period1: () => Math.floor(Date.now() / 1000) - 2592000,   interval: '1d'  },
-  '6mo': { period1: () => Math.floor(Date.now() / 1000) - 15552000,  interval: '1d'  },
-  '1y':  { period1: () => Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk' },
-  '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
+  '1d':  { period1: () => Math.floor(Date.now() / 1000) - 86400,     interval: '5m',  days: 5   },
+  '1w':  { period1: () => Math.floor(Date.now() / 1000) - 604800,    interval: '1h',  days: 10  },
+  '1mo': { period1: () => Math.floor(Date.now() / 1000) - 2592000,   interval: '1d',  days: 35  },
+  '6mo': { period1: () => Math.floor(Date.now() / 1000) - 15552000,  interval: '1d',  days: 185 },
+  '1y':  { period1: () => Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk', days: 370 },
+  '5y':  { period1: () => Math.floor(Date.now() / 1000) - 157680000, interval: '1mo', days: 1826 },
 };
+
+async function fetchStooqChart(stooqSymbol, days) {
+  const to   = new Date();
+  const from = new Date(Date.now() - days * 86400000);
+  const d1   = from.toISOString().slice(0, 10).replace(/-/g, '');
+  const d2   = to.toISOString().slice(0, 10).replace(/-/g, '');
+  const url  = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&d1=${d1}&d2=${d2}`;
+
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' } });
+  if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
+
+  const csv = await res.text();
+  if (csv.includes('Write to www@stooq.com') || !csv.includes(',')) {
+    throw new Error('Stooq data unavailable');
+  }
+
+  const lines = csv.trim().split('\n').slice(1); // skip header
+  return lines
+    .map(line => {
+      const [date, open, high, low, close, volume] = line.split(',');
+      return {
+        date:   new Date(date.trim()).toISOString(),
+        open:   parseFloat(open)   || 0,
+        high:   parseFloat(high)   || 0,
+        low:    parseFloat(low)    || 0,
+        close:  parseFloat(close)  || 0,
+        volume: parseInt(volume)   || 0,
+      };
+    })
+    .filter(q => q.close > 0)
+    .reverse(); // Stooq returns newest-first
+}
 
 async function handleStockChart(url) {
   const symbol = url.searchParams.get('symbol') ?? '';
@@ -184,6 +216,18 @@ async function handleStockChart(url) {
   const cfg     = RANGE_MAP[range] ?? RANGE_MAP['1mo'];
   const period1 = cfg.period1();
   const period2 = Math.floor(Date.now() / 1000);
+
+  // ^TASI is not on Yahoo Finance — use Stooq instead
+  if (symbol === '^TASI') {
+    try {
+      const quotes  = await fetchStooqChart('^tasi', cfg.days);
+      const payload = { success: true, meta: { symbol: '^TASI', currency: 'SAR' }, quotes };
+      chartCache.set(cacheKey, { data: payload, ts: Date.now() });
+      return json(payload);
+    } catch (e) {
+      return json({ success: false, error: e.message }, 500);
+    }
+  }
 
   try {
     const res = await fetch(
