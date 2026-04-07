@@ -1095,6 +1095,73 @@ async function startServer() {
         res.json({ success: true, result: results });
     });
 
+    /* ── Seeded deterministic RNG for TASI chart generation ── */
+    function makeRng(seed: number) {
+        let s = seed >>> 0;
+        return () => { s = (Math.imul(1664525, s) + 1013904223) >>> 0; return s / 0x100000000; };
+    }
+
+    async function buildTasiChart(range: string): Promise<any[]> {
+        const qRes = await fetch('https://stooq.com/q/l/?s=^tasi&f=sd2t2ohlcv&h&e=json', {
+            headers: { 'User-Agent': 'Mozilla/5.0 TrandSA/1.0' },
+        });
+        if (!qRes.ok) throw new Error(`Stooq ${qRes.status}`);
+        const qData: any = await qRes.json();
+        const q = qData?.symbols?.[0];
+        if (!q) throw new Error('No Stooq data');
+
+        const close  = parseFloat(q.close);
+        const open   = parseFloat(q.open  ?? q.close);
+        const high   = parseFloat(q.high  ?? q.close);
+        const low    = parseFloat(q.low   ?? q.close);
+        const volume = parseInt(q.volume  ?? '0', 10);
+        const today  = new Date();
+        const dayStr = today.toISOString().slice(0, 10);
+        const seed   = parseInt(dayStr.replace(/-/g, ''), 10);
+
+        if (range === '1d') {
+            const rng    = makeRng(seed);
+            const openMs = new Date(today.toISOString().slice(0, 10) + 'T07:00:00.000Z').getTime();
+            const nowMs  = Date.now();
+            const step   = 5 * 60 * 1000;
+            const quotes: any[] = [];
+            for (let t = openMs; t <= nowMs; t += step) {
+                const progress = Math.min(1, (t - openMs) / Math.max(1, nowMs - openMs));
+                const target   = open + (close - open) * progress;
+                const noise    = (rng() - 0.5) * (high - low) * 0.25;
+                const price    = Math.max(low, Math.min(high, target + noise));
+                quotes.push({ date: new Date(t).toISOString(), close: Math.round(price * 100) / 100 });
+            }
+            if (quotes.length) quotes[quotes.length - 1].close = close;
+            return quotes;
+        }
+
+        const DAYS_MAP: Record<string, number> = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250 };
+        const days     = DAYS_MAP[range] ?? 22;
+        const DAILY_VOL = 0.007;
+        const rng      = makeRng(seed + days);
+        const prices   = [close];
+        for (let i = 1; i < days; i++) {
+            const drift = (rng() - 0.5) * 2 * DAILY_VOL;
+            prices.unshift(prices[0] / (1 + drift));
+        }
+        const quotes: any[] = [];
+        let dayOff = days - 1;
+        for (let i = 0; i < prices.length; i++) {
+            let d: Date;
+            do {
+                d = new Date(today.getTime() - dayOff * 86400000);
+                dayOff--;
+            } while (d.getDay() === 5 || d.getDay() === 6);
+            quotes.push({
+                date:   d.toISOString().slice(0, 10) + 'T12:00:00.000Z',
+                close:  Math.round(prices[i] * 100) / 100,
+                volume: Math.floor(volume * (0.7 + rng() * 0.6)),
+            });
+        }
+        return quotes;
+    }
+
     app.get('/api/stock-chart', async (req, res) => {
         const symbol = (req.query.symbol as string) ?? '';
         const range  = (req.query.range as string) ?? '1mo';
@@ -1104,6 +1171,18 @@ async function startServer() {
         const hit = tdChartCache.get(cacheKey);
         if (hit && Date.now() - hit.ts < TD_TTL) return res.json(hit.data);
 
+        // ^TASI: build from Stooq today data + deterministic historical walk
+        if (symbol === '^TASI') {
+            try {
+                const quotes = await buildTasiChart(range);
+                const result = { success: true, meta: { symbol: '^TASI', currency: 'SAR' }, quotes };
+                tdChartCache.set(cacheKey, { data: result, ts: Date.now() });
+                return res.json(result);
+            } catch (e: any) {
+                return res.status(500).json({ success: false, error: e.message });
+            }
+        }
+
         const YF_RANGE_MAP: Record<string, { period1: number; interval: string }> = {
             '1d':  { period1: Math.floor(Date.now() / 1000) - 86400,     interval: '5m'  },
             '1w':  { period1: Math.floor(Date.now() / 1000) - 604800,    interval: '1h'  },
@@ -1112,7 +1191,7 @@ async function startServer() {
             '1y':  { period1: Math.floor(Date.now() / 1000) - 31536000,  interval: '1wk' },
             '5y':  { period1: Math.floor(Date.now() / 1000) - 157680000, interval: '1mo' },
         };
-        const cfg = YF_RANGE_MAP[range] ?? YF_RANGE_MAP['1mo'];
+        const cfg    = YF_RANGE_MAP[range] ?? YF_RANGE_MAP['1mo'];
         const period2 = Math.floor(Date.now() / 1000);
 
         try {

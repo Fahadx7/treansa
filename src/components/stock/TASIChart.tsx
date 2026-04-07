@@ -7,7 +7,7 @@ import {
 import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 
 /* ─── Types ─── */
-interface Quote { date: string; close: number }
+interface Quote    { date: string; close: number }
 interface TASIData { price: number; change: number; changePercent: number; high: number; low: number }
 
 type Range = '1d' | '1w' | '1mo' | '6mo' | '1y';
@@ -66,6 +66,8 @@ export function TASIChart() {
             .filter((q: any) => q.close > 0)
             .map((q: any) => ({ date: q.date, close: q.close }))
         );
+      } else {
+        setError('تعذّر جلب بيانات الشارت');
       }
       if (tasiJson.success) setTasi(tasiJson);
     } catch {
@@ -77,12 +79,10 @@ export function TASIChart() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const up       = (tasi?.change ?? 0) >= 0;
-  const color    = up ? '#00ff88' : '#ff4444';
-  const minVal   = quotes.length ? Math.min(...quotes.map(q => q.close)) * 0.9995 : 0;
-  const maxVal   = quotes.length ? Math.max(...quotes.map(q => q.close)) * 1.0005 : 0;
-
-  /* thin out labels so X-axis doesn't crowd */
+  const up    = (tasi?.change ?? 0) >= 0;
+  const color = up ? '#00ff88' : '#ff4444';
+  const minVal = quotes.length ? Math.min(...quotes.map(q => q.close)) * 0.9995 : 0;
+  const maxVal = quotes.length ? Math.max(...quotes.map(q => q.close)) * 1.0005 : 0;
   const tickInterval = quotes.length > 60 ? Math.floor(quotes.length / 8) : 'preserveStartEnd';
 
   return (
@@ -192,46 +192,32 @@ export function TASIChart() {
                       <stop offset="100%" stopColor={color} stopOpacity={0}    />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="rgba(255,255,255,0.04)"
-                    vertical={false}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis
                     dataKey="date"
                     tickFormatter={v => formatX(v, range)}
                     tick={{ fill: '#4b5563', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
+                    axisLine={false} tickLine={false}
                     interval={tickInterval}
                   />
                   <YAxis
                     domain={[minVal, maxVal]}
                     tickFormatter={v => v.toLocaleString('en', { maximumFractionDigits: 0 })}
                     tick={{ fill: '#4b5563', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={58}
-                    orientation="left"
+                    axisLine={false} tickLine={false}
+                    width={58} orientation="left"
                   />
                   <Tooltip content={<ChartTooltip />} />
                   {quotes[0] && (
-                    <ReferenceLine
-                      y={quotes[0].close}
-                      stroke="rgba(255,255,255,0.1)"
-                      strokeDasharray="4 4"
-                    />
+                    <ReferenceLine y={quotes[0].close} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" />
                   )}
                   <Area
-                    type="monotone"
-                    dataKey="close"
-                    stroke={color}
-                    strokeWidth={2}
+                    type="monotone" dataKey="close"
+                    stroke={color} strokeWidth={2}
                     fill={`url(#tasiGrad-${up ? 'up' : 'dn'})`}
                     dot={false}
                     activeDot={{ r: 4, fill: color, strokeWidth: 0 }}
-                    isAnimationActive={true}
-                    animationDuration={600}
+                    isAnimationActive={true} animationDuration={600}
                   />
                 </AreaChart>
               </ResponsiveContainer>
