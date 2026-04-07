@@ -220,24 +220,33 @@ async function buildTasiChart(range) {
     return quotes;
   }
 
-  // Daily: deterministic walk backwards from today's close
-  const DAYS_MAP = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250, '5y': 1250, '10y': 2500 };
-  const days = DAYS_MAP[range] ?? 22;
-  const DAILY_VOL = 0.007; // 0.7% typical TASI daily volatility
-  const rng = makeRng(seed + days);
+  // Daily: forward walk from historical anchor to today's close
+  const DAYS_MAP    = { '1w': 7, '1mo': 22, '6mo': 95, '1y': 250, '5y': 1250, '10y': 2500 };
+  // Historical TASI anchors (approximate real starting prices)
+  const ANCHORS     = { '1w': close, '1mo': close, '6mo': close, '1y': close,
+                        '5y': 8500, '10y': 6800 };
+  const days        = DAYS_MAP[range] ?? 22;
+  const startPrice  = ANCHORS[range] ?? close;
+  const DAILY_VOL   = 0.008;
+  const rng         = makeRng(seed + days);
 
-  // Generate price path backwards
-  const prices = [close];
-  for (let i = 1; i < days; i++) {
-    const drift  = (rng() - 0.5) * 2 * DAILY_VOL;
-    prices.unshift(prices[0] / (1 + drift));
+  // Compute daily trend to go from startPrice to close over N days
+  const dailyTrend  = days > 1 ? Math.pow(close / startPrice, 1 / days) - 1 : 0;
+
+  const prices = [];
+  let price    = startPrice;
+  for (let i = 0; i < days; i++) {
+    const noise = (rng() - 0.5) * 2 * DAILY_VOL;
+    price = price * (1 + dailyTrend + noise);
+    prices.push(Math.max(3000, price)); // floor at 3000 to prevent negative drift
   }
+  // Pin final point to actual close
+  prices[prices.length - 1] = close;
 
   const quotes = [];
   let dayOff   = days - 1;
   for (let i = 0; i < prices.length; i++) {
     let d;
-    // Skip weekends
     do {
       d = new Date(today.getTime() - dayOff * 86400000);
       dayOff--;
