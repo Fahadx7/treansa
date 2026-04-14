@@ -1,0 +1,14 @@
+{
+  "project": "treansa",
+  "platform": "ios",
+  "github": {
+    "owner": "Fahadx7",
+    "repo": "treansa"
+  },
+  "ios": {},
+  "flutter": {
+    "watch": {}
+  },
+  "reactNative": {},
+  "mobai": {}
+}
