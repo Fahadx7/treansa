@@ -1,1 +1,12 @@
-{ "project": "treansa", "platform": "ios", "ios": { "path": "ios", "scheme": "Runner", "signing": false } }
+{
+  "project": "treansa",
+  "github": {
+    "owner": "Fahadx7",
+    "repository": "treansa"
+  },
+  "ios": {
+    "path": "ios",
+    "scheme": "Runner",
+    "signing": false
+  }
+}
