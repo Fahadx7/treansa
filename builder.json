@@ -2,7 +2,7 @@
   "project": "treansa",
   "github": {
     "owner": "Fahadx7",
-    "repository": "treansa"
+    "repo": "treansa"
   },
   "ios": {
     "path": "ios",
