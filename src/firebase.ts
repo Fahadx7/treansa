@@ -6,12 +6,32 @@ import {
   User as FirebaseUser,
 } from 'firebase/auth';
 import { getFirestore, collection, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, getDocs, addDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
 
-// Initialize Firebase
+// Firebase config — values come from environment variables (.env.local)
+// Web API keys are technically public, but env vars give us flexibility to
+// rotate without code changes, and avoid accidental commits of related secrets.
+const firebaseConfig = {
+  apiKey:             import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:         import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:          import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:      import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId:  import.meta.env.VITE_FIREBASE_MESSAGING_ID,
+  appId:              import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId:      import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
+
+const firestoreDatabaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DB_ID || '(default)';
+
+// Fail loud and early if env vars are missing
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  throw new Error(
+    'Firebase env vars are missing. Copy .env.example to .env.local and fill in values.'
+  );
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app, firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 
 // Auth Helpers

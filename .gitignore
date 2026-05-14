@@ -1,10 +1,40 @@
+# ─── Dependencies ────────────────────────────────────────────────
 node_modules/
+
+# ─── Build outputs ───────────────────────────────────────────────
 build/
 dist/
 coverage/
-.DS_Store
-*.log
-.env*
+.vite/
+
+# ─── Environment ─────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
 !.env.example
-my-clone/
+
+# ─── OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+
+# ─── Editor ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.cursor-tutor/
+
+# ─── Claude / AI tooling ─────────────────────────────────────────
 src/.claude/
+.claude/sessions/
+.claude/cache/
+
+# ─── Cloudflare ──────────────────────────────────────────────────
+.wrangler/
+.dev.vars
+
+# ─── Misc ────────────────────────────────────────────────────────
+my-clone/
+*.rej
+*.orig
